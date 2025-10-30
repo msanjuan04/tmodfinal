@@ -1,4 +1,4 @@
-import type { Request, Response } from "express"
+import type { CookieOptions, Request, Response } from "express"
 import { createHmac, timingSafeEqual } from "node:crypto"
 
 import { env } from "../config/env"
@@ -96,22 +96,39 @@ export function requireAdminSession(request: Request) {
   return session
 }
 
+function baseCookieOptions(): CookieOptions {
+  const sameSite = env.sessionCookie.sameSite
+  const secure = sameSite === "none" ? true : env.sessionCookie.secure
+
+  const options: CookieOptions = {
+    httpOnly: true,
+    secure,
+    sameSite,
+    path: "/",
+  }
+
+  if (env.sessionCookie.domain) {
+    options.domain = env.sessionCookie.domain
+  }
+
+  return options
+}
+
 export function setSessionCookie(response: Response, session: SessionData) {
   const payload = encodeSession(session)
   const signature = signPayload(payload)
   const value = `${payload}.${signature}`
 
-  response.cookie(SESSION_COOKIE_NAME, value, {
-    httpOnly: true,
-    secure: env.nodeEnv === "production",
-    sameSite: "lax",
-    path: "/",
+  const options: CookieOptions = {
+    ...baseCookieOptions(),
     maxAge: SESSION_TTL_SECONDS * 1000,
-  })
+  }
+
+  response.cookie(SESSION_COOKIE_NAME, value, options)
 }
 
 export function clearSessionCookie(response: Response) {
-  response.clearCookie(SESSION_COOKIE_NAME, { path: "/" })
+  response.clearCookie(SESSION_COOKIE_NAME, baseCookieOptions())
 }
 
 export function sessionCookieName() {

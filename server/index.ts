@@ -10,11 +10,13 @@ import { adminRouter } from "./routes/admin"
 
 const app = express()
 
-const allowedOrigins = new Set([env.clientAppUrl])
+const allowedOrigins = new Set([env.clientAppOrigin])
 
 if (env.nodeEnv !== "production") {
   allowedOrigins.add("http://localhost:5173")
   allowedOrigins.add("http://127.0.0.1:5173")
+  allowedOrigins.add("http://localhost:4173")
+  allowedOrigins.add("http://127.0.0.1:4173")
 }
 
 app.use(

@@ -21,6 +21,9 @@ const envSchema = z.object({
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(20, "SUPABASE_SERVICE_ROLE_KEY must be provided"),
   SESSION_SECRET: z.string().min(16, "SESSION_SECRET must be at least 16 characters"),
   CLIENT_APP_URL: z.string().url().default("http://localhost:5173"),
+  SESSION_COOKIE_SAME_SITE: z.enum(["lax", "strict", "none"]).optional(),
+  SESSION_COOKIE_DOMAIN: z.string().optional(),
+  SESSION_COOKIE_SECURE: z.coerce.boolean().optional(),
 })
 
 const parsed = envSchema.safeParse({
@@ -31,6 +34,9 @@ const parsed = envSchema.safeParse({
   SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
   SESSION_SECRET: process.env.SESSION_SECRET,
   CLIENT_APP_URL: process.env.CLIENT_APP_URL ?? "http://localhost:5173",
+  SESSION_COOKIE_SAME_SITE: process.env.SESSION_COOKIE_SAME_SITE,
+  SESSION_COOKIE_DOMAIN: process.env.SESSION_COOKIE_DOMAIN,
+  SESSION_COOKIE_SECURE: process.env.SESSION_COOKIE_SECURE,
 })
 
 if (!parsed.success) {
@@ -45,6 +51,19 @@ if (!normalizedSupabaseUrl) {
   throw new Error("SUPABASE_URL or NEXT_PUBLIC_SUPABASE_URL must be provided")
 }
 
+const clientUrl = new URL(parsed.data.CLIENT_APP_URL)
+const localHosts = new Set(["localhost", "127.0.0.1", "[::1]", "::1"])
+const isLocalClientHost = localHosts.has(clientUrl.hostname)
+
+const sessionSameSite = parsed.data.SESSION_COOKIE_SAME_SITE ?? (isLocalClientHost ? "lax" : "none")
+let sessionSecure = parsed.data.SESSION_COOKIE_SECURE ?? !isLocalClientHost
+
+if (sessionSameSite === "none" && !sessionSecure) {
+  sessionSecure = true
+}
+
+const sessionDomain = parsed.data.SESSION_COOKIE_DOMAIN?.trim() ?? null
+
 export const env = {
   nodeEnv: parsed.data.NODE_ENV,
   port: parsed.data.PORT,
@@ -52,4 +71,10 @@ export const env = {
   supabaseServiceRoleKey: parsed.data.SUPABASE_SERVICE_ROLE_KEY,
   sessionSecret: parsed.data.SESSION_SECRET,
   clientAppUrl: parsed.data.CLIENT_APP_URL,
+  clientAppOrigin: clientUrl.origin,
+  sessionCookie: {
+    sameSite: sessionSameSite,
+    secure: sessionSecure,
+    domain: sessionDomain && sessionDomain.length > 0 ? sessionDomain : null,
+  },
 }

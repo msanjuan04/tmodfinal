@@ -64,6 +64,11 @@ SESSION_SECRET=your_secure_session_secret_here
 
 # URL pública del cliente (actualiza al desplegar)
 CLIENT_APP_URL=http://localhost:5173
+
+# Cookies de sesión (ajusta si front y API viven en dominios distintos)
+# SESSION_COOKIE_SAME_SITE=none
+# SESSION_COOKIE_SECURE=true
+# SESSION_COOKIE_DOMAIN=.tu-dominio.com
 ```
 
 **⚠️ IMPORTANTE:** Obtén tu `SUPABASE_SERVICE_ROLE_KEY` desde:
@@ -130,6 +135,8 @@ npm run dev
 3. **Proyecto por defecto:** El slug `terraza-mediterranea-premium` está configurado como proyecto por defecto.
 
 4. **Seguridad:** Cada cliente solo puede ver sus propios proyectos y datos relacionados.
+
+5. **Cookies en producción:** Si sirves el front y la API desde dominios distintos, activa `SESSION_COOKIE_SAME_SITE=none` y `SESSION_COOKIE_SECURE=true` (y, opcionalmente, `SESSION_COOKIE_DOMAIN`) para que las sesiones funcionen entre dominios.
 
 ## 🎯 **Próximos Pasos**
 
