@@ -1,0 +1,41 @@
+import type { ReactNode } from "react"
+import { Navigate, useLocation } from "react-router-dom"
+
+import { useAuth } from "@app/context/AuthContext"
+
+interface RequireAuthProps {
+  children: ReactNode
+  role?: "client" | "admin" | "any"
+}
+
+function isSuperAdmin(email: string) {
+  return email.toLowerCase() === "aterrazea@gmail.com"
+}
+
+export function RequireAuth({ children, role = "client" }: RequireAuthProps) {
+  const { session, loading } = useAuth()
+  const location = useLocation()
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#F4F1EA]">
+        <p className="text-sm font-medium text-[#6B7280]">Cargando tu acceso a Terrazea…</p>
+      </div>
+    )
+  }
+
+  if (!session) {
+    const redirect = encodeURIComponent(location.pathname + location.search)
+    return <Navigate to={`/login?redirect=${redirect}`} replace />
+  }
+
+  if (role === "admin" && !(session.role === "admin" || isSuperAdmin(session.email))) {
+    return <Navigate to="/client/dashboard" replace />
+  }
+
+  if (role === "client" && session.role !== "client" && !isSuperAdmin(session.email)) {
+    return <Navigate to="/dashboard" replace />
+  }
+
+  return <>{children}</>
+}
