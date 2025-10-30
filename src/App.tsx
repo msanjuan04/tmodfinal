@@ -54,10 +54,11 @@ export default function App() {
         <Route path="calendar" element={<AdminCalendarPage />} />
         <Route path="clients" element={<AdminClientsPage />} />
         <Route path="team" element={<AdminTeamPage />} />
-        <Route path="projects" element={<AdminProjectsPage />} />
         <Route path="projects/:projectId" element={<AdminProjectDetailsPage />} />
+        <Route path="projects" element={<AdminProjectsPage />} />
         <Route path="documents" element={<AdminDocumentsPage />} />
       </Route>
+      <Route path="/admin/projects/:projectId" element={<AdminProjectDetailsPage />} />
       <Route path="*" element={<Navigate to="/login" replace />} />
     </Routes>
   )

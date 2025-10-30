@@ -71,7 +71,11 @@ export async function fetchAdminProjects(filters?: AdminProjectListFilters): Pro
 }
 
 export async function createAdminProject(payload: CreateAdminProjectPayload) {
-  await api.post("/admin/projects", payload)
+  const safePayload = {
+    ...payload,
+    locationNotes: payload.locationNotes ?? ""
+  }
+  await api.post("/admin/projects", safePayload)
 }
 
 export interface FetchAdminTeamMembersOptions {

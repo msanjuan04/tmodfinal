@@ -131,6 +131,7 @@ export function AdminProjectDetailsPage() {
   const [error, setError] = useState<string | null>(null)
   const [teamMembers, setTeamMembers] = useState<AdminProjectTeamMember[]>([])
   const [refreshing, setRefreshing] = useState(false)
+  const [activeTab, setActiveTab] = useState("overview")
 
   const loadDetail = useCallback(async () => {
     if (!projectId) return
@@ -228,109 +229,111 @@ export function AdminProjectDetailsPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <Card className="border-[#E8E6E0]">
-        <CardHeader className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="space-y-3">
-            <div className="flex items-center gap-2 text-sm text-[#6B7280]">
-              <Button variant="ghost" size="sm" className="-ml-2 text-[#2F4F4F]" onClick={() => navigate(-1)}>
-                <ArrowLeft className="mr-1 h-4 w-4" /> Volver
-              </Button>
-              <span>•</span>
-              <span className="text-[#2F4F4F]">Proyecto</span>
-            </div>
-            <div>
-              <h1 className="font-heading text-3xl text-[#2F4F4F] lg:text-4xl">{detail.project.name}</h1>
-              <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-[#6B7280]">
-                {detail.project.code ? <span>Proyecto #{detail.project.code}</span> : null}
-                {detail.project.clientName ? (
-                  <>
-                    <span>•</span>
-                    <span>Cliente: {detail.project.clientName}</span>
-                  </>
-                ) : null}
-                {detail.project.locationCity ? (
-                  <>
-                    <span>•</span>
-                    <span className="inline-flex items-center gap-1">
-                      <MapPin className="h-4 w-4" />
-                      {detail.project.locationCity}
-                    </span>
-                  </>
-                ) : null}
-              </div>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge className="rounded-full bg-[#2F4F4F] px-4 py-2 text-white">
-              {statusLabel(detail.project.status)}
-            </Badge>
-            <Button variant="outline" className="border-[#E8E6E0] text-[#2F4F4F]" onClick={handleManualRefresh} disabled={refreshing}>
-              <RefreshCw className={`mr-2 h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
-              {refreshing ? "Actualizando" : "Actualizar"}
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent className="grid gap-6 md:grid-cols-3">
-          <div className="space-y-3">
-            <p className="text-xs uppercase tracking-[0.3em] text-[#C6B89E]">Progreso</p>
-            <div className="flex items-end justify-between">
-              <span className="font-heading text-3xl text-[#2F4F4F]">{detail.project.progressPercent.toFixed(1)}%</span>
-              <span className="text-xs text-[#6B7280]">
-                {detail.stats.completedTasks}/{detail.stats.totalTasks} tareas completadas
-              </span>
-            </div>
-            <Progress value={detail.project.progressPercent} className="h-2 bg-[#E8E6E0]" />
-          </div>
-          <div className="rounded-[1.25rem] border border-[#E8E6E0] bg-[#F8F7F4] p-4 text-sm text-[#4B5563]">
-            <p className="text-xs uppercase tracking-[0.3em] text-[#C6B89E]">Resumen rápido</p>
-            <div className="mt-3 space-y-2">
-              <div className="flex justify-between">
-                <span>Hitos alcanzados</span>
-                <span className="font-semibold">{detail.stats.milestonesCompleted}/{detail.stats.milestonesTotal}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Documentos</span>
-                <span className="font-semibold">{detail.stats.documentsTotal}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Fotos</span>
-                <span className="font-semibold">{detail.stats.photosTotal}</span>
-              </div>
-            </div>
-          </div>
-          <div className="rounded-[1.25rem] border border-[#E8E6E0] bg-[#F8F7F4] p-4 text-sm text-[#4B5563]">
-            <p className="text-xs uppercase tracking-[0.3em] text-[#C6B89E]">Fechas clave</p>
-            <div className="mt-3 space-y-2">
-              <div className="flex justify-between">
-                <span>Inicio</span>
-                <span className="font-semibold">{formatDate(detail.project.startDate)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Entrega estimada</span>
-                <span className="font-semibold">{formatDate(detail.project.estimatedDelivery)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Actualizado</span>
-                <span className="font-semibold">{formatDate(detail.project.lastUpdatedAt)}</span>
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Tabs defaultValue="overview" className="space-y-6">
-        <TabsList className="border border-[#E8E6E0] bg-white">
+    <div className="container mx-auto max-w-5xl pb-16">
+      <h1 className="text-3xl font-bold text-[#2F4F4F] mb-4">{detail?.project.name}</h1>
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="bg-white rounded-xl border border-[#E8E6E0] shadow">
+        <TabsList className="flex flex-wrap gap-2 p-4 border-b border-[#E8E6E0]">
           <TabsTrigger value="overview">Resumen</TabsTrigger>
-          <TabsTrigger value="team">Equipo</TabsTrigger>
-          <TabsTrigger value="roadmap">Fases e hitos</TabsTrigger>
+          <TabsTrigger value="gallery">Galería</TabsTrigger>
           <TabsTrigger value="documents">Documentos</TabsTrigger>
-          <TabsTrigger value="photos">Fotos</TabsTrigger>
+          <TabsTrigger value="payments">Pagos</TabsTrigger>
+          <TabsTrigger value="calendar">Calendario</TabsTrigger>
           <TabsTrigger value="timeline">Timeline</TabsTrigger>
-          <TabsTrigger value="settings">Ajustes</TabsTrigger>
+          <TabsTrigger value="team">Equipo</TabsTrigger>
+          <TabsTrigger value="notes">Notas</TabsTrigger>
+          <TabsTrigger value="edit">Editar</TabsTrigger>
         </TabsList>
+        <TabsContent value="overview">
+          <Card className="border-[#E8E6E0]">
+            <CardHeader className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 text-sm text-[#6B7280]">
+                  <Button variant="ghost" size="sm" className="-ml-2 text-[#2F4F4F]" onClick={() => navigate(-1)}>
+                    <ArrowLeft className="mr-1 h-4 w-4" /> Volver
+                  </Button>
+                  <span>•</span>
+                  <span className="text-[#2F4F4F]">Proyecto</span>
+                </div>
+                <div>
+                  <h1 className="font-heading text-3xl text-[#2F4F4F] lg:text-4xl">{detail.project.name}</h1>
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-[#6B7280]">
+                    {detail.project.code ? <span>Proyecto #{detail.project.code}</span> : null}
+                    {detail.project.clientName ? (
+                      <>
+                        <span>•</span>
+                        <span>Cliente: {detail.project.clientName}</span>
+                      </>
+                    ) : null}
+                    {detail.project.locationCity ? (
+                      <>
+                        <span>•</span>
+                        <span className="inline-flex items-center gap-1">
+                          <MapPin className="h-4 w-4" />
+                          {detail.project.locationCity}
+                        </span>
+                      </>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge className="rounded-full bg-[#2F4F4F] px-4 py-2 text-white">
+                  {statusLabel(detail.project.status)}
+                </Badge>
+                <Button variant="outline" className="border-[#E8E6E0] text-[#2F4F4F]" onClick={handleManualRefresh} disabled={refreshing}>
+                  <RefreshCw className={`mr-2 h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+                  {refreshing ? "Actualizando" : "Actualizar"}
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="grid gap-6 md:grid-cols-3">
+              <div className="space-y-3">
+                <p className="text-xs uppercase tracking-[0.3em] text-[#C6B89E]">Progreso</p>
+                <div className="flex items-end justify-between">
+                  <span className="font-heading text-3xl text-[#2F4F4F]">{detail.project.progressPercent.toFixed(1)}%</span>
+                  <span className="text-xs text-[#6B7280]">
+                    {detail.stats.completedTasks}/{detail.stats.totalTasks} tareas completadas
+                  </span>
+                </div>
+                <Progress value={detail.project.progressPercent} className="h-2 bg-[#E8E6E0]" />
+              </div>
+              <div className="rounded-[1.25rem] border border-[#E8E6E0] bg-[#F8F7F4] p-4 text-sm text-[#4B5563]">
+                <p className="text-xs uppercase tracking-[0.3em] text-[#C6B89E]">Resumen rápido</p>
+                <div className="mt-3 space-y-2">
+                  <div className="flex justify-between">
+                    <span>Hitos alcanzados</span>
+                    <span className="font-semibold">{detail.stats.milestonesCompleted}/{detail.stats.milestonesTotal}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Documentos</span>
+                    <span className="font-semibold">{detail.stats.documentsTotal}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Fotos</span>
+                    <span className="font-semibold">{detail.stats.photosTotal}</span>
+                  </div>
+                </div>
+              </div>
+              <div className="rounded-[1.25rem] border border-[#E8E6E0] bg-[#F8F7F4] p-4 text-sm text-[#4B5563]">
+                <p className="text-xs uppercase tracking-[0.3em] text-[#C6B89E]">Fechas clave</p>
+                <div className="mt-3 space-y-2">
+                  <div className="flex justify-between">
+                    <span>Inicio</span>
+                    <span className="font-semibold">{formatDate(detail.project.startDate)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Entrega estimada</span>
+                    <span className="font-semibold">{formatDate(detail.project.estimatedDelivery)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Actualizado</span>
+                    <span className="font-semibold">{formatDate(detail.project.lastUpdatedAt)}</span>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
 
-        <TabsContent value="overview" className="space-y-6">
           <Card className="border-[#E8E6E0]">
             <CardHeader>
               <CardTitle className="text-[#2F4F4F]">Actividades recientes</CardTitle>
@@ -374,30 +377,43 @@ export function AdminProjectDetailsPage() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="team">
-          <TeamSection detail={detail} teamMembers={teamMembers} onUpdated={loadDetail} />
-        </TabsContent>
-
-        <TabsContent value="roadmap" className="space-y-6">
-          <RoadmapSection detail={detail} onUpdated={loadDetail} />
+        <TabsContent value="gallery">
+          <PhotosSection projectId={detail.project.id} photos={detail.photos} onUpdated={loadDetail} />
         </TabsContent>
 
         <TabsContent value="documents">
           <DocumentsSection projectId={detail.project.id} documents={detail.documents} onUpdated={loadDetail} />
         </TabsContent>
 
-        <TabsContent value="photos">
-          <PhotosSection projectId={detail.project.id} photos={detail.photos} onUpdated={loadDetail} />
+        <TabsContent value="payments">
+          {/* Pagos */}
+        </TabsContent>
+
+        <TabsContent value="calendar">
+          {/* Calendario */}
         </TabsContent>
 
         <TabsContent value="timeline">
           <TimelineSection projectId={detail.project.id} timeline={detail.timeline} onUpdated={loadDetail} />
         </TabsContent>
 
-        <TabsContent value="settings">
+        <TabsContent value="team">
+          <TeamSection detail={detail} teamMembers={teamMembers} onUpdated={loadDetail} />
+        </TabsContent>
+
+        <TabsContent value="notes">
+          {/* Notas asociadas al project */}
+        </TabsContent>
+
+        <TabsContent value="edit">
           <SettingsSection detail={detail} onUpdated={loadDetail} />
         </TabsContent>
       </Tabs>
+      <div className="flex justify-end pt-8">
+        <Button variant="destructive" onClick={handleDelete}>
+          Eliminar proyecto
+        </Button>
+      </div>
     </div>
   )
 }

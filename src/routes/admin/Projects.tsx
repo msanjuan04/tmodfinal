@@ -626,7 +626,7 @@ export function AdminProjectsPage() {
                           <div className="flex flex-col">
                             <button
                               type="button"
-                              onClick={() => navigate(`/dashboard/projects/${project.id}`)}
+                              onClick={() => navigate(`/admin/projects/${project.id}`)}
                               className="text-left font-semibold text-[#2F4F4F] hover:underline"
                             >
                               {project.name}
@@ -771,7 +771,11 @@ function ProjectFormSheet({ open, onOpenChange, mode, values, setValues, loading
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    await onSubmit(values)
+    const safeValues = {
+      ...values,
+      locationNotes: values.locationNotes || ""
+    };
+    await onSubmit(safeValues)
   }
 
   const clientOptions = clients.map((client) => ({ value: client.id, label: client.fullName }))
