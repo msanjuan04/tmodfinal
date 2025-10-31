@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server"
 import { NextResponse } from "next/server"
 
 import { getSessionFromCookies, redirectToLogin } from "./lib/auth/session"
+import { isSuperAdminEmail } from "./lib/constants/admin"
 
 export async function middleware(request: NextRequest) {
   const session = await getSessionFromCookies(request.cookies)
@@ -19,7 +20,7 @@ export async function middleware(request: NextRequest) {
   }
 
   if (isDashboardRoute) {
-    const isAdmin = session.role === "admin" || session.email.toLowerCase() === "terrazea@gmail.com"
+    const isAdmin = session.role === "admin" || isSuperAdminEmail(session.email)
     if (!isAdmin) {
       return redirectToLogin(request.nextUrl, "forbidden")
     }

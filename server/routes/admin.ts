@@ -1006,11 +1006,11 @@ router.post(
 )
 
 router.get(
-  "/projects/:projectId",
+  "/projects/:projectRef",
   asyncHandler(async (request, response) => {
     requireAdminSession(request)
-    const { projectId } = request.params
-    const project = await getAdminProjectDetail(projectId)
+    const { projectRef } = request.params
+    const project = await getAdminProjectDetail(projectRef)
     response.json({ project })
   }),
 )

@@ -1,0 +1,22 @@
+0 verbose cli /usr/local/bin/node /usr/local/lib/node_modules/npm/bin/npm-cli.js
+1 info using npm@10.9.3
+2 info using node@v22.19.0
+3 silly config load:file:/usr/local/lib/node_modules/npm/npmrc
+4 silly config load:file:/Users/gnerai/Downloads/clientzone-main/.npmrc
+5 silly config load:file:/Users/gnerai/.npmrc
+6 silly config load:file:/usr/local/etc/npmrc
+7 verbose title npm exec supabase db push
+8 verbose argv "exec" "--" "supabase" "db" "push"
+9 verbose logfile logs-max:10 dir:/Users/gnerai/Downloads/clientzone-main/.npm-cache/_logs/2025-10-31T11_23_02_227Z-
+10 verbose logfile /Users/gnerai/Downloads/clientzone-main/.npm-cache/_logs/2025-10-31T11_23_02_227Z-debug-0.log
+11 silly logfile done cleaning log files
+12 silly packumentCache heap:2197815296 maxSize:549453824 maxEntrySize:274726912
+13 http fetch GET 200 https://registry.npmjs.org/supabase 199ms (cache revalidated)
+14 silly packumentCache heap:2197815296 maxSize:549453824 maxEntrySize:274726912
+15 silly packumentCache heap:2197815296 maxSize:549453824 maxEntrySize:274726912
+16 verbose cwd /Users/gnerai/Downloads/clientzone-main
+17 verbose os Darwin 24.6.0
+18 verbose node v22.19.0
+19 verbose npm  v10.9.3
+20 verbose exit 1
+21 verbose code 1

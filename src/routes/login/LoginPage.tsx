@@ -2,6 +2,7 @@ import { useMemo } from "react"
 import { Navigate, useLocation, useSearchParams } from "react-router-dom"
 
 import { useAuth } from "@app/context/AuthContext"
+import { isSuperAdminEmail } from "@/lib/constants/admin"
 
 import { LoginForm } from "./LoginForm"
 
@@ -27,7 +28,7 @@ export function LoginPage() {
   }
 
   if (session && !forceLogin) {
-    if (session.role === "admin" || session.email.toLowerCase() === "aterrazea@gmail.com") {
+    if (session.role === "admin" || isSuperAdminEmail(session.email)) {
       return <Navigate to={location.state?.from ?? "/dashboard"} replace />
     }
     return <Navigate to={redirectTo} replace />

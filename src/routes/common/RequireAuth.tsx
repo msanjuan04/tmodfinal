@@ -2,14 +2,11 @@ import type { ReactNode } from "react"
 import { Navigate, useLocation } from "react-router-dom"
 
 import { useAuth } from "@app/context/AuthContext"
+import { isSuperAdminEmail } from "@/lib/constants/admin"
 
 interface RequireAuthProps {
   children: ReactNode
   role?: "client" | "admin" | "any"
-}
-
-function isSuperAdmin(email: string) {
-  return email.toLowerCase() === "aterrazea@gmail.com"
 }
 
 export function RequireAuth({ children, role = "client" }: RequireAuthProps) {
@@ -29,11 +26,11 @@ export function RequireAuth({ children, role = "client" }: RequireAuthProps) {
     return <Navigate to={`/login?redirect=${redirect}`} replace />
   }
 
-  if (role === "admin" && !(session.role === "admin" || isSuperAdmin(session.email))) {
+  if (role === "admin" && !(session.role === "admin" || isSuperAdminEmail(session.email))) {
     return <Navigate to="/client/dashboard" replace />
   }
 
-  if (role === "client" && session.role !== "client" && !isSuperAdmin(session.email)) {
+  if (role === "client" && session.role !== "client" && !isSuperAdminEmail(session.email)) {
     return <Navigate to="/dashboard" replace />
   }
 

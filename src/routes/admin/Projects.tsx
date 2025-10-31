@@ -626,7 +626,7 @@ export function AdminProjectsPage() {
                           <div className="flex flex-col">
                             <button
                               type="button"
-                              onClick={() => navigate(`/admin/projects/${project.id}`)}
+                              onClick={() => navigate(`/dashboard/projects/${project.slug ?? project.id}`)}
                               className="text-left font-semibold text-[#2F4F4F] hover:underline"
                             >
                               {project.name}

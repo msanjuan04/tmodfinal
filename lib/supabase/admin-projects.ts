@@ -21,6 +21,52 @@ const PROJECT_STATUS_DEFAULT: AdminProjectStatus = "planificacion"
 
 type TeamAssignmentsMap = Partial<Record<AdminProjectTeamRole, string | null>>
 
+const PROJECT_DETAIL_COLUMNS = [
+  "id",
+  "client_id",
+  "name",
+  "code",
+  "status",
+  "progress_percent",
+  "start_date",
+  "estimated_delivery",
+  "location_city",
+  "location_notes",
+  "created_at",
+  "updated_at",
+  "clients(full_name)",
+]
+
+const PROJECT_DETAIL_FALLBACK_COLUMNS = PROJECT_DETAIL_COLUMNS.filter((column) => !column.startsWith("clients("))
+
+function isMissingRelationError(error: unknown, relation?: string) {
+  if (!error || typeof error !== "object") return false
+  const { code, message, details } = error as { code?: string; message?: string; details?: string }
+  const lowerRelation = relation?.toLowerCase()
+  const haystack = [message, details, JSON.stringify(error)].filter(Boolean).join(" ").toLowerCase()
+
+  const codeMatches =
+    code === "42P01" ||
+    code === "42703" ||
+    (typeof code === "string" && code.startsWith("PGRST") && haystack.includes("does not exist"))
+
+  if (!codeMatches) return false
+  if (!lowerRelation) return true
+  if (haystack.includes(lowerRelation)) return true
+  if (haystack.includes(`${lowerRelation}_`)) return true
+  return false
+}
+
+function rowsOrEmpty<T>(result: { data: T[] | null; error: unknown }, relation?: string): T[] {
+  if (result.error) {
+    if (isMissingRelationError(result.error, relation)) {
+      return []
+    }
+    throw result.error
+  }
+  return result.data ?? []
+}
+
 function slugify(value: string) {
   return value
     .normalize("NFD")
@@ -450,108 +496,89 @@ function computeWeightProgress(rows: Array<{ weight: number; status: string; pro
   return { totalWeight, completedWeight: effectiveCompleted, ratio }
 }
 
-export async function getAdminProjectDetail(projectId: string): Promise<AdminProjectDetails> {
+export async function getAdminProjectDetail(projectRef: string): Promise<AdminProjectDetails> {
   const supabase = createServerSupabaseClient()
 
-  const projectPromise = supabase
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(projectRef)
+  const projectResult = await supabase
     .from("projects")
-    .select(
-      [
-        "id",
-        "client_id",
-        "name",
-        "code",
-        "status",
-        "progress_percent",
-        "start_date",
-        "estimated_delivery",
-        "location_city",
-        "location_notes",
-        "created_at",
-        "updated_at",
-        "clients(full_name)",
-      ].join(","),
-    )
-    .eq("id", projectId)
+    .select(PROJECT_DETAIL_COLUMNS.join(","))
+    .eq(isUuid ? "id" : "slug", projectRef)
     .maybeSingle()
 
-  const teamPromise = supabase
-    .from("project_team_members")
-    .select("team_member_id, assigned_role, status, team_members(full_name, email, role)")
-    .eq("project_id", projectId)
+  let projectRow = projectResult.data as any
+  let clientInfo: any = null
 
-  const directoryPromise = supabase
-    .from("team_members")
-    .select("id, full_name, role, email, phone_number, avatar_url, default_status")
-    .order("full_name", { ascending: true })
+  if (projectResult.error) {
+    if (isMissingRelationError(projectResult.error, "clients")) {
+      const fallback = await supabase
+        .from("projects")
+        .select(PROJECT_DETAIL_FALLBACK_COLUMNS.join(","))
+        .eq(isUuid ? "id" : "slug", projectRef)
+        .maybeSingle()
+      if (fallback.error) throw fallback.error
+      projectRow = fallback.data as any
+    } else {
+      throw projectResult.error
+    }
+  }
 
-  const milestonesPromise = supabase
-    .from("project_milestones")
-    .select("id, title, summary, scheduled_start, scheduled_end, actual_date, weight, progress_percent, status, sort_order")
-    .eq("project_id", projectId)
-    .order("sort_order", { ascending: true })
+  if (!projectRow) {
+    throw new Error("Proyecto no encontrado")
+  }
 
-  const phasesPromise = supabase
-    .from("project_phases")
-    .select("id, name, summary, expected_start, expected_end, actual_end, weight, progress_percent, status, sort_order")
-    .eq("project_id", projectId)
-    .order("sort_order", { ascending: true })
+  clientInfo = Array.isArray(projectRow?.clients) ? projectRow.clients[0] : projectRow?.clients
 
-  const documentsPromise = supabase
-    .from("project_documents")
-    .select("id, name, category, file_type, size_label, uploaded_at, status, storage_path, uploaded_by, notify_client, tags, notes, team_members!project_documents_uploaded_by_fkey(full_name)")
-    .eq("project_id", projectId)
-    .order("uploaded_at", { ascending: false })
+  const projectId = projectRow.id as string
 
-  const photosPromise = supabase
-    .from("project_photos")
-    .select("id, url, caption, taken_at, sort_order, storage_path, tags, is_cover")
-    .eq("project_id", projectId)
-    .order("sort_order", { ascending: true })
-
-  const timelinePromise = supabase
-    .from("project_activity")
-    .select("id, occurred_at, title, description, event_type, status")
-    .eq("project_id", projectId)
-    .order("occurred_at", { ascending: false })
-    .limit(100)
-
-  const tasksPromise = supabase
-    .from("project_tasks")
-    .select("status, weight")
-    .eq("project_id", projectId)
-
-  const [projectResult, teamResult, directoryResult, milestonesResult, phasesResult, documentsResult, photosResult, timelineResult, tasksResult] = await Promise.all([
-    projectPromise,
-    teamPromise,
-    directoryPromise,
-    milestonesPromise,
-    phasesPromise,
-    documentsPromise,
-    photosPromise,
-    timelinePromise,
-    tasksPromise,
+  const [teamResult, directoryResult, milestonesResult, phasesResult, documentsResult, photosResult, timelineResult, tasksResult] = await Promise.all([
+    supabase
+      .from("project_team_members")
+      .select("team_member_id, assigned_role, status, team_members(full_name, email, role)")
+      .eq("project_id", projectId),
+    supabase.from("team_members").select("id, full_name, role, email, phone_number, avatar_url, default_status").order("full_name", { ascending: true }),
+    supabase
+      .from("project_milestones")
+      .select("id, title, summary, scheduled_start, scheduled_end, actual_date, weight, progress_percent, status, sort_order")
+      .eq("project_id", projectId)
+      .order("sort_order", { ascending: true }),
+    supabase
+      .from("project_phases")
+      .select("id, name, summary, expected_start, expected_end, actual_end, weight, progress_percent, status, sort_order")
+      .eq("project_id", projectId)
+      .order("sort_order", { ascending: true }),
+    supabase
+      .from("project_documents")
+      .select("id, name, category, file_type, size_label, uploaded_at, status, storage_path, uploaded_by, notify_client, tags, notes, team_members!project_documents_uploaded_by_fkey(full_name)")
+      .eq("project_id", projectId)
+      .order("uploaded_at", { ascending: false }),
+    supabase
+      .from("project_photos")
+      .select("id, url, caption, taken_at, sort_order, storage_path, tags, is_cover")
+      .eq("project_id", projectId)
+      .order("sort_order", { ascending: true }),
+    supabase
+      .from("project_activity")
+      .select("id, occurred_at, title, description, event_type, status")
+      .eq("project_id", projectId)
+      .order("occurred_at", { ascending: false })
+      .limit(100),
+    supabase.from("project_tasks").select("status, weight").eq("project_id", projectId),
   ])
 
-  if (projectResult.error) throw projectResult.error
-  if (!projectResult.data) throw new Error("Proyecto no encontrado")
+  const teamRows = rowsOrEmpty(teamResult, "project_team_members") as any[]
+  const directoryRows = rowsOrEmpty(directoryResult, "team_members") as any[]
+  const milestonesRows = rowsOrEmpty(milestonesResult, "project_milestones") as any[]
+  const phasesRows = rowsOrEmpty(phasesResult, "project_phases") as any[]
+  const documentsRows = rowsOrEmpty(documentsResult, "project_documents") as any[]
+  const photosRows = rowsOrEmpty(photosResult, "project_photos") as any[]
+  const timelineRows = rowsOrEmpty(timelineResult, "project_activity") as any[]
+  const tasksRows = rowsOrEmpty(tasksResult, "project_tasks") as any[]
 
-  const projectRow = projectResult.data as any
-  const clientInfo = Array.isArray(projectRow?.clients) ? projectRow.clients[0] : projectRow?.clients
-
-  if (teamResult.error) throw teamResult.error
-  if (directoryResult.error) throw directoryResult.error
-  if (milestonesResult.error) throw milestonesResult.error
-  if (phasesResult.error) throw phasesResult.error
-  if (documentsResult.error) throw documentsResult.error
-  if (photosResult.error) throw photosResult.error
-  if (timelineResult.error) throw timelineResult.error
-  if (tasksResult.error) throw tasksResult.error
-
-  const assignments = normalizeTeamAssignments((teamResult.data ?? []) as any[])
+  const assignments = normalizeTeamAssignments(teamRows)
 
   const directory: AdminProjectTeamMember[] =
-    (directoryResult.data ?? []).map((member: any) => ({
+    directoryRows.map((member: any) => ({
       id: member.id,
       name: member.full_name,
       role: member.role,
@@ -561,7 +588,7 @@ export async function getAdminProjectDetail(projectId: string): Promise<AdminPro
     })) ?? []
 
   const milestones: AdminProjectMilestone[] =
-    (milestonesResult.data ?? []).map((row: any) => ({
+    milestonesRows.map((row: any) => ({
       id: row.id,
       title: row.title,
       summary: row.summary ?? null,
@@ -575,7 +602,7 @@ export async function getAdminProjectDetail(projectId: string): Promise<AdminPro
     })) ?? []
 
   const phases: AdminProjectPhase[] =
-    (phasesResult.data ?? []).map((row: any) => ({
+    phasesRows.map((row: any) => ({
       id: row.id,
       name: row.name,
       summary: row.summary ?? null,
@@ -589,7 +616,7 @@ export async function getAdminProjectDetail(projectId: string): Promise<AdminPro
     })) ?? []
 
   const documents: AdminProjectDocument[] =
-    (documentsResult.data ?? []).map((row: any) => ({
+    documentsRows.map((row: any) => ({
       id: row.id,
       name: row.name,
       category: row.category,
@@ -607,7 +634,7 @@ export async function getAdminProjectDetail(projectId: string): Promise<AdminPro
     })) ?? []
 
   const photos: AdminProjectPhoto[] =
-    (photosResult.data ?? []).map((row: any) => ({
+    photosRows.map((row: any) => ({
       id: row.id,
       url: row.url,
       caption: row.caption ?? null,
@@ -619,7 +646,7 @@ export async function getAdminProjectDetail(projectId: string): Promise<AdminPro
     })) ?? []
 
   const timeline: AdminProjectTimelineEvent[] =
-    (timelineResult.data ?? []).map((row: any) => ({
+    timelineRows.map((row: any) => ({
       id: row.id,
       occurredAt: row.occurred_at,
       title: row.title,
@@ -628,7 +655,7 @@ export async function getAdminProjectDetail(projectId: string): Promise<AdminPro
       eventType: row.event_type ?? "project",
     })) ?? []
 
-  const taskRows = (tasksResult.data ?? []) as Array<any>
+  const taskRows = tasksRows as Array<any>
   const taskTotalWeight = taskRows.reduce((acc, task) => acc + Number(task.weight ?? 0), 0)
   const taskCompletedWeight = taskRows
     .filter((task) => task.status === "done")

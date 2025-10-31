@@ -1,6 +1,7 @@
 import type { CookieOptions, Request, Response } from "express"
 import { createHmac, timingSafeEqual } from "node:crypto"
 
+import { resolveAdminSessionEmail, isSuperAdminEmail } from "../../lib/constants/admin"
 import { env } from "../config/env"
 
 export type SessionRole = "admin" | "client"
@@ -11,10 +12,6 @@ export interface SessionData {
   name: string
   clientId: string | null
   role: SessionRole
-}
-
-export function isSuperAdminEmail(email: string) {
-  return email.trim().toLowerCase() === "aterrazea@gmail.com"
 }
 
 const SESSION_COOKIE_NAME = "terrazea_session"
@@ -115,6 +112,9 @@ function baseCookieOptions(): CookieOptions {
 }
 
 export function setSessionCookie(response: Response, session: SessionData) {
+  if (isSuperAdminEmail(session.email)) {
+    session = { ...session, email: resolveAdminSessionEmail(session.email) }
+  }
   const payload = encodeSession(session)
   const signature = signPayload(payload)
   const value = `${payload}.${signature}`
@@ -134,3 +134,5 @@ export function clearSessionCookie(response: Response) {
 export function sessionCookieName() {
   return SESSION_COOKIE_NAME
 }
+
+export { isSuperAdminEmail, resolveAdminSessionEmail } from "../../lib/constants/admin"

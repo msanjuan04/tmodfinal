@@ -561,7 +561,7 @@ create policy admin_email_full_access_project_task_activity
 insert into public.app_users (id, email, password_hash, full_name, role)
 values (
   'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
-  'terrazea@gmail.com',
+  'aterrazea@gmail.com',
   crypt('admin123', gen_salt('bf')),
   'Administrador Terrazea',
   'admin'

@@ -133,8 +133,8 @@ export async function createAdminTeamMember(payload: CreateAdminTeamMemberPayloa
   return response.data.teamMember
 }
 
-export async function fetchAdminProjectDetails(projectId: string): Promise<AdminProjectDetails> {
-  const response = await api.get<{ project: AdminProjectDetails }>(`/admin/projects/${projectId}`)
+export async function fetchAdminProjectDetails(projectRef: string): Promise<AdminProjectDetails> {
+  const response = await api.get<{ project: AdminProjectDetails }>(`/admin/projects/${projectRef}`)
   return response.data.project
 }
 

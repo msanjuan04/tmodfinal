@@ -5,6 +5,7 @@ import { useState } from "react"
 import { NavLink, useLocation } from "react-router-dom"
 import { useAuth } from "@app/context/AuthContext"
 import { cn } from "@/lib/utils"
+import { isSuperAdminEmail, SUPER_ADMIN_PRIMARY_EMAIL } from "@/lib/constants/admin"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
@@ -46,7 +47,9 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const location = useLocation()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const { session } = useAuth()
-  const isAdmin = session?.role === "admin" || session?.email.toLowerCase() === "aterrazea@gmail.com"
+  const isAdmin = session?.role === "admin" || (session?.email ? isSuperAdminEmail(session.email) : false)
+  const sessionEmail = session?.email
+  const safeEmail = sessionEmail ? (isSuperAdminEmail(sessionEmail) ? SUPER_ADMIN_PRIMARY_EMAIL : sessionEmail) : SUPER_ADMIN_PRIMARY_EMAIL
 
   return (
     <div className="min-h-screen bg-[#f4f1ea]">
@@ -95,7 +98,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                   </Avatar>
                   <div className="flex-1 overflow-hidden">
                     <p className="truncate text-sm font-medium text-[#2f4f4f]">{session?.name ?? "Equipo Terrazea"}</p>
-                    <p className="truncate text-xs text-[#6b7280]">{session?.email ?? "terrazea@gmail.com"}</p>
+                    <p className="truncate text-xs text-[#6b7280]">{safeEmail}</p>
                   </div>
                   <ChevronRight className="h-4 w-4 text-[#6b7280]" />
                 </button>
