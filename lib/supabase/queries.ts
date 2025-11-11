@@ -112,6 +112,8 @@ export interface DocumentRow {
   sizeLabel: string | null
   uploadedAt: string | null
   status: DocumentStatus
+  viewUrl: string | null
+  downloadUrl: string | null
 }
 
 export interface DocumentsData {
@@ -122,6 +124,22 @@ export interface DocumentsData {
     plans: number
     certificates: number
     warranties: number
+  }
+}
+
+export interface GalleryPhoto {
+  id: string
+  url: string
+  caption: string | null
+  takenAt: string | null
+  sortOrder: number
+}
+
+export interface GalleryData {
+  photos: GalleryPhoto[]
+  summary: {
+    totalPhotos: number | null
+    lastUpdate: string | null
   }
 }
 
@@ -417,6 +435,8 @@ export async function getProjectDetails(projectSlug?: string): Promise<ProjectDe
   }
 }
 
+const STORAGE_BUCKET = "project-assets"
+
 export async function getDocuments(projectSlug?: string): Promise<DocumentsData> {
   const supabase = createServerSupabaseClient()
   const { projectId } = await resolveProjectId(projectSlug, supabase)
@@ -424,7 +444,7 @@ export async function getDocuments(projectSlug?: string): Promise<DocumentsData>
   const [{ data: documents, error: documentsError }, { data: summaryRows, error: summaryError }] = await Promise.all([
     supabase
       .from("project_documents")
-      .select("id, name, category, file_type, size_label, uploaded_at, status")
+      .select("id, name, category, file_type, size_label, uploaded_at, status, storage_path")
       .eq("project_id", projectId)
       .order("uploaded_at", { ascending: false }),
     supabase
@@ -437,14 +457,23 @@ export async function getDocuments(projectSlug?: string): Promise<DocumentsData>
   if (summaryError) throw summaryError
 
   const total = summaryRows?.find((row) => row.category === "total")?.count ?? documents?.length ?? 0
-  const plans = summaryRows?.find((row) => row.category === "planos")?.count ?? documents?.filter((doc) => doc.category === "Planos").length ?? 0
+  const normalizeCategory = (value: string | null | undefined) =>
+    value ? value.toLowerCase().normalize("NFD").replace(/\p{Diacritic}/gu, "") : ""
+  const plans =
+    summaryRows?.find((row) => row.category === "planos")?.count ??
+    documents?.filter((doc) => normalizeCategory(doc.category) === "planos").length ??
+    0
   const certificates =
     summaryRows?.find((row) => row.category === "certificados")?.count ??
-    documents?.filter((doc) => doc.category === "Certificados").length ??
+    documents?.filter((doc) => normalizeCategory(doc.category) === "certificados").length ??
     0
   const warranties =
     summaryRows?.find((row) => row.category === "garantias")?.count ??
-    documents?.filter((doc) => doc.category === "Garantías").length ??
+    documents?.filter((doc) => normalizeCategory(doc.category) === "garantias").length ??
+    0
+  const budgets =
+    summaryRows?.find((row) => row.category === "presupuestos")?.count ??
+    documents?.filter((doc) => normalizeCategory(doc.category) === "presupuestos").length ??
     0
 
   const sevenDaysAgo = new Date()
@@ -456,23 +485,81 @@ export async function getDocuments(projectSlug?: string): Promise<DocumentsData>
       return uploaded >= sevenDaysAgo
     }).length ?? 0
 
+  const storage = supabase.storage.from(STORAGE_BUCKET)
+
   return {
     documents:
-      documents?.map((doc) => ({
-        id: doc.id,
-        name: doc.name,
-        category: doc.category,
-        fileType: doc.file_type,
-        sizeLabel: doc.size_label,
-        uploadedAt: doc.uploaded_at,
-        status: doc.status as DocumentStatus,
-      })) ?? [],
+      documents?.map((doc) => {
+        let viewUrl: string | null = null
+        let downloadUrl: string | null = null
+
+        if (doc.storage_path) {
+          const { data } = storage.getPublicUrl(doc.storage_path)
+          viewUrl = data?.publicUrl ?? null
+
+          if (viewUrl) {
+            try {
+              const download = new URL(viewUrl)
+              download.searchParams.set("download", doc.name)
+              downloadUrl = download.toString()
+            } catch {
+              const separator = viewUrl.includes("?") ? "&" : "?"
+              downloadUrl = `${viewUrl}${separator}download=${encodeURIComponent(doc.name)}`
+            }
+          }
+        }
+
+        return {
+          id: doc.id,
+          name: doc.name,
+          category: doc.category,
+          fileType: doc.file_type,
+          sizeLabel: doc.size_label,
+          uploadedAt: doc.uploaded_at,
+          status: doc.status as DocumentStatus,
+          viewUrl,
+          downloadUrl,
+        }
+      }) ?? [],
     stats: {
       total,
       newThisWeek,
       plans,
       certificates,
       warranties,
+      budgets,
+    },
+  }
+}
+
+export async function getProjectGallery(projectSlug?: string): Promise<GalleryData> {
+  const supabase = createServerSupabaseClient()
+  const { projectId } = await resolveProjectId(projectSlug, supabase)
+
+  const [{ data: photos, error: photosError }, { data: summary, error: summaryError }] = await Promise.all([
+    supabase
+      .from("project_photos")
+      .select("id, url, caption, taken_at, sort_order")
+      .eq("project_id", projectId)
+      .order("sort_order", { ascending: true }),
+    supabase.from("project_photos_summary").select("total_photos, last_update").eq("project_id", projectId).maybeSingle(),
+  ])
+
+  if (photosError) throw photosError
+  if (summaryError) throw summaryError
+
+  return {
+    photos:
+      photos?.map((photo) => ({
+        id: photo.id,
+        url: photo.url,
+        caption: photo.caption,
+        takenAt: photo.taken_at,
+        sortOrder: photo.sort_order ?? 0,
+      })) ?? [],
+    summary: {
+      totalPhotos: summary?.total_photos ?? null,
+      lastUpdate: summary?.last_update ?? null,
     },
   }
 }
@@ -571,5 +658,161 @@ export async function getMessages(projectSlug?: string): Promise<MessagesData> {
   return {
     conversations: conversationSummaries,
     messagesByConversation,
+  }
+}
+
+function buildMessagePreview(content: string): string {
+  const trimmed = content.trim()
+  if (trimmed.length <= 140) {
+    return trimmed
+  }
+  return `${trimmed.slice(0, 137)}…`
+}
+
+export async function ensureProjectConversation(projectSlug: string, teamMemberId: string): Promise<string> {
+  const supabase = createServerSupabaseClient()
+  const { projectId } = await resolveProjectId(projectSlug, supabase)
+
+  const { data: existing, error: existingError } = await supabase
+    .from("project_conversations")
+    .select("id")
+    .eq("project_id", projectId)
+    .eq("team_member_id", teamMemberId)
+    .maybeSingle()
+
+  if (existingError) {
+    throw existingError
+  }
+
+  if (existing?.id) {
+    return existing.id
+  }
+
+  const { data: inserted, error: insertError } = await supabase
+    .from("project_conversations")
+    .insert({
+      project_id: projectId,
+      team_member_id: teamMemberId,
+      unread_count: 0,
+    })
+    .select("id")
+    .single()
+
+  if (insertError) {
+    throw insertError
+  }
+
+  return inserted.id
+}
+
+export async function sendTeamMemberConversationMessage(conversationId: string, content: string): Promise<void> {
+  const supabase = createServerSupabaseClient()
+  const { data: conversation, error } = await supabase
+    .from("project_conversations")
+    .select("id, team_member_id, unread_count")
+    .eq("id", conversationId)
+    .maybeSingle()
+
+  if (error) {
+    throw error
+  }
+
+  if (!conversation) {
+    const notFound = new Error("Conversación no encontrada")
+    ;(notFound as Error & { status?: number }).status = 404
+    throw notFound
+  }
+
+  const trimmed = content.trim()
+  if (trimmed.length === 0) {
+    const invalid = new Error("El mensaje no puede estar vacío")
+    ;(invalid as Error & { status?: number }).status = 400
+    throw invalid
+  }
+
+  const { error: insertError } = await supabase.from("project_messages").insert({
+    conversation_id: conversationId,
+    sender_type: "team_member",
+    team_member_id: conversation.team_member_id,
+    content: trimmed,
+  })
+
+  if (insertError) {
+    throw insertError
+  }
+
+  const { error: updateError } = await supabase
+    .from("project_conversations")
+    .update({
+      last_message_preview: buildMessagePreview(trimmed),
+      last_message_at: new Date().toISOString(),
+      unread_count: 0,
+    })
+    .eq("id", conversationId)
+
+  if (updateError) {
+    throw updateError
+  }
+}
+
+export async function sendClientConversationMessage(
+  conversationId: string,
+  clientId: string,
+  content: string,
+): Promise<void> {
+  const supabase = createServerSupabaseClient()
+  const { data: conversation, error } = await supabase
+    .from("project_conversations")
+    .select("id, team_member_id, unread_count, projects!inner(id, slug, client_id)")
+    .eq("id", conversationId)
+    .maybeSingle()
+
+  if (error) {
+    throw error
+  }
+
+  if (!conversation) {
+    const notFound = new Error("Conversación no encontrada")
+    ;(notFound as Error & { status?: number }).status = 404
+    throw notFound
+  }
+
+  if (conversation.projects?.client_id !== clientId) {
+    const forbidden = new Error("No tienes acceso a esta conversación")
+    ;(forbidden as Error & { status?: number }).status = 403
+    throw forbidden
+  }
+
+  const trimmed = content.trim()
+  if (trimmed.length === 0) {
+    const invalid = new Error("El mensaje no puede estar vacío")
+    ;(invalid as Error & { status?: number }).status = 400
+    throw invalid
+  }
+
+  const { error: insertError } = await supabase.from("project_messages").insert({
+    conversation_id: conversationId,
+    sender_type: "client",
+    team_member_id: null,
+    content: trimmed,
+  })
+
+  if (insertError) {
+    throw insertError
+  }
+
+  const nextUnread = (conversation.unread_count ?? 0) + 1
+
+  const { error: updateError } = await supabase
+    .from("project_conversations")
+    .update({
+      last_message_preview: buildMessagePreview(trimmed),
+      last_message_at: new Date().toISOString(),
+      unread_count: nextUnread,
+    })
+    .eq("id", conversationId)
+
+  if (updateError) {
+    throw updateError
   }
 }

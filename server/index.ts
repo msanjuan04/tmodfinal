@@ -7,8 +7,10 @@ import { env } from "./config/env"
 import { authRouter } from "./routes/auth"
 import { clientRouter } from "./routes/client"
 import { adminRouter } from "./routes/admin"
+import { webhooksRouter } from "./routes/webhooks"
 
 const app = express()
+const MAX_PAYLOAD_SIZE = "150mb"
 
 const allowedOrigins = new Set([env.clientAppOrigin])
 
@@ -32,8 +34,14 @@ app.use(
   }),
 )
 app.use(cookieParser())
-app.use(express.json())
 app.use(morgan(env.nodeEnv === "production" ? "combined" : "dev"))
+
+// Webhook endpoint debe recibir el body raw (sin parsear JSON)
+app.use("/api/webhooks", express.raw({ type: "application/json" }), webhooksRouter)
+
+// Resto de endpoints usan JSON parsing
+app.use(express.json({ limit: MAX_PAYLOAD_SIZE }))
+app.use(express.urlencoded({ limit: MAX_PAYLOAD_SIZE, extended: true }))
 
 app.use("/api/auth", authRouter)
 app.use("/api/client", clientRouter)

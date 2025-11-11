@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useNavigate, useParams } from "react-router-dom"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
@@ -7,6 +7,7 @@ import {
   Archive,
   ArrowLeft,
   CheckSquare,
+  ExternalLink,
   FileText,
   ImageIcon,
   Loader2,
@@ -119,8 +120,53 @@ function formatDateTime(value?: string | null) {
   }
 }
 
+const TIMELINE_STYLE_MAP: Record<string, { dot: string; ring: string; badge: string; border: string }> = {
+  success: {
+    dot: "bg-[#047857]",
+    ring: "border-[#34D399]",
+    badge: "bg-[#DCFCE7] text-[#047857]",
+    border: "border-[#A7F3D0]",
+  },
+  warning: {
+    dot: "bg-[#D97706]",
+    ring: "border-[#FBBF24]",
+    badge: "bg-[#FEF3C7] text-[#B45309]",
+    border: "border-[#FDE68A]",
+  },
+  danger: {
+    dot: "bg-[#B91C1C]",
+    ring: "border-[#FCA5A5]",
+    badge: "bg-[#FEE2E2] text-[#991B1B]",
+    border: "border-[#FECACA]",
+  },
+  info: {
+    dot: "bg-[#2563EB]",
+    ring: "border-[#BFDBFE]",
+    badge: "bg-[#DBEAFE] text-[#1D4ED8]",
+    border: "border-[#C7D2FE]",
+  },
+}
+
+function resolveTimelineStyles(status?: string) {
+  const normalized = status?.toLowerCase() ?? ""
+  if (normalized.includes("success") || normalized.includes("complet")) return TIMELINE_STYLE_MAP.success
+  if (normalized.includes("warn") || normalized.includes("pend") || normalized.includes("bloq")) return TIMELINE_STYLE_MAP.warning
+  if (normalized.includes("error") || normalized.includes("danger") || normalized.includes("alert")) return TIMELINE_STYLE_MAP.danger
+  return TIMELINE_STYLE_MAP.info
+}
+
 function formatWeight(weight: number) {
   return weight % 1 === 0 ? weight.toFixed(0) : weight.toFixed(2)
+}
+
+function formatFileSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`
+  const kb = bytes / 1024
+  if (kb < 1024) return `${kb >= 10 ? Math.round(kb) : kb.toFixed(1)} KB`
+  const mb = kb / 1024
+  if (mb < 1024) return `${mb >= 10 ? Math.round(mb) : mb.toFixed(1)} MB`
+  const gb = mb / 1024
+  return `${gb >= 10 ? Math.round(gb) : gb.toFixed(1)} GB`
 }
 
 export function AdminProjectPage() {
@@ -162,11 +208,11 @@ export function AdminProjectPage() {
     await loadDetail()
   }
 
-  const handleProgressChange = (progress: number) => {
+  const handleProgressChange = useCallback((progress: number) => {
     setDetail((prev) => (prev ? { ...prev, project: { ...prev.project, progressPercent: progress } } : prev))
-  }
+  }, [])
 
-  const handleTaskStatsChange = (stats: { total: number; done: number }) => {
+  const handleTaskStatsChange = useCallback((stats: { total: number; done: number }) => {
     setDetail((prev) =>
       prev
         ? {
@@ -179,9 +225,9 @@ export function AdminProjectPage() {
           }
         : prev,
     )
-  }
+  }, [])
 
-  const handleTaskCountersChange = (counters: { completedWeight: number; totalWeight: number }) => {
+  const handleTaskCountersChange = useCallback((counters: { completedWeight: number; totalWeight: number }) => {
     setDetail((prev) =>
       prev
         ? {
@@ -194,7 +240,7 @@ export function AdminProjectPage() {
           }
         : prev,
     )
-  }
+  }, [])
 
   const handleDelete = useCallback(async () => {
     if (!detail) return
@@ -245,58 +291,94 @@ export function AdminProjectPage() {
   }
 
   return (
-    <div className="container mx-auto max-w-5xl pb-16">
-      <h1 className="mb-4 text-3xl font-bold text-[#2F4F4F]">{detail.project.name}</h1>
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="rounded-xl border border-[#E8E6E0] bg-white shadow">
-        <TabsList className="flex flex-wrap gap-2 border-b border-[#E8E6E0] p-4">
-          <TabsTrigger value="overview">Resumen</TabsTrigger>
-          <TabsTrigger value="gallery">Galería</TabsTrigger>
-          <TabsTrigger value="documents">Documentos</TabsTrigger>
-          <TabsTrigger value="timeline">Timeline</TabsTrigger>
-          <TabsTrigger value="team">Equipo</TabsTrigger>
-          <TabsTrigger value="edit">Editar</TabsTrigger>
+    <div className="space-y-6 pb-16">
+      <div className="rounded-[1.5rem] border border-[#E8E6E0] bg-white p-6 shadow-sm">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 text-sm text-[#6B7280]">
+              <Button variant="ghost" size="sm" className="-ml-2 text-[#2F4F4F]" onClick={() => navigate(-1)}>
+                <ArrowLeft className="mr-1 h-4 w-4" /> Volver
+              </Button>
+              <span>•</span>
+              <span className="text-[#2F4F4F]">Ficha del proyecto</span>
+            </div>
+            <div>
+              <h1 className="font-heading text-3xl text-[#2F4F4F] lg:text-4xl">{detail.project.name}</h1>
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-[#6B7280]">
+                {detail.project.code ? <span>Proyecto #{detail.project.code}</span> : null}
+                {detail.project.clientName ? (
+                  <>
+                    <span>•</span>
+                    <span>Cliente: {detail.project.clientName}</span>
+                  </>
+                ) : null}
+                {detail.project.locationCity ? (
+                  <>
+                    <span>•</span>
+                    <span className="inline-flex items-center gap-1">
+                      <MapPin className="h-4 w-4" />
+                      {detail.project.locationCity}
+                    </span>
+                  </>
+                ) : null}
+              </div>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge className="rounded-full bg-[#2F4F4F] px-4 py-2 text-white">{statusLabel(detail.project.status)}</Badge>
+            <Button variant="outline" className="border-[#E8E6E0] text-[#2F4F4F]" onClick={handleManualRefresh} disabled={refreshing}>
+              <RefreshCw className={`mr-2 h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+              {refreshing ? "Actualizando" : "Actualizar"}
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col gap-6">
+        <TabsList className="flex h-auto flex-wrap items-center gap-2 rounded-full border border-[#E8E6E0] bg-white p-1 shadow-sm">
+          <TabsTrigger
+            value="overview"
+            className="rounded-full px-4 py-2 text-sm text-[#4B5563] data-[state=active]:bg-[#2F4F4F] data-[state=active]:text-white"
+          >
+            Resumen
+          </TabsTrigger>
+          <TabsTrigger
+            value="gallery"
+            className="rounded-full px-4 py-2 text-sm text-[#4B5563] data-[state=active]:bg-[#2F4F4F] data-[state=active]:text-white"
+          >
+            Galería
+          </TabsTrigger>
+          <TabsTrigger
+            value="documents"
+            className="rounded-full px-4 py-2 text-sm text-[#4B5563] data-[state=active]:bg-[#2F4F4F] data-[state=active]:text-white"
+          >
+            Documentos
+          </TabsTrigger>
+          <TabsTrigger
+            value="timeline"
+            className="rounded-full px-4 py-2 text-sm text-[#4B5563] data-[state=active]:bg-[#2F4F4F] data-[state=active]:text-white"
+          >
+            Timeline
+          </TabsTrigger>
+          <TabsTrigger
+            value="team"
+            className="rounded-full px-4 py-2 text-sm text-[#4B5563] data-[state=active]:bg-[#2F4F4F] data-[state=active]:text-white"
+          >
+            Equipo
+          </TabsTrigger>
+          <TabsTrigger
+            value="edit"
+            className="rounded-full px-4 py-2 text-sm text-[#4B5563] data-[state=active]:bg-[#2F4F4F] data-[state=active]:text-white"
+          >
+            Editar
+          </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="overview">
+        <TabsContent value="overview" className="space-y-6">
           <Card className="border-[#E8E6E0]">
-            <CardHeader className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-              <div className="space-y-3">
-                <div className="flex items-center gap-2 text-sm text-[#6B7280]">
-                  <Button variant="ghost" size="sm" className="-ml-2 text-[#2F4F4F]" onClick={() => navigate(-1)}>
-                    <ArrowLeft className="mr-1 h-4 w-4" /> Volver
-                  </Button>
-                  <span>•</span>
-                  <span className="text-[#2F4F4F]">Proyecto</span>
-                </div>
-                <div>
-                  <h2 className="font-heading text-3xl text-[#2F4F4F] lg:text-4xl">{detail.project.name}</h2>
-                  <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-[#6B7280]">
-                    {detail.project.code ? <span>Proyecto #{detail.project.code}</span> : null}
-                    {detail.project.clientName ? (
-                      <>
-                        <span>•</span>
-                        <span>Cliente: {detail.project.clientName}</span>
-                      </>
-                    ) : null}
-                    {detail.project.locationCity ? (
-                      <>
-                        <span>•</span>
-                        <span className="inline-flex items-center gap-1">
-                          <MapPin className="h-4 w-4" />
-                          {detail.project.locationCity}
-                        </span>
-                      </>
-                    ) : null}
-                  </div>
-                </div>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge className="rounded-full bg-[#2F4F4F] px-4 py-2 text-white">{statusLabel(detail.project.status)}</Badge>
-                <Button variant="outline" className="border-[#E8E6E0] text-[#2F4F4F]" onClick={handleManualRefresh} disabled={refreshing}>
-                  <RefreshCw className={`mr-2 h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
-                  {refreshing ? "Actualizando" : "Actualizar"}
-                </Button>
-              </div>
+            <CardHeader className="space-y-1">
+              <CardTitle className="text-[#2F4F4F]">Indicadores generales</CardTitle>
+              <p className="text-sm text-[#6B7280]">Estado del proyecto y métricas principales.</p>
             </CardHeader>
             <CardContent className="grid gap-6 md:grid-cols-3">
               <div className="space-y-3">
@@ -394,7 +476,13 @@ export function AdminProjectPage() {
         </TabsContent>
 
         <TabsContent value="documents">
-          <DocumentsSection projectId={detail.project.id} documents={detail.documents} onUpdated={loadDetail} />
+          <DocumentsSection
+            projectId={detail.project.id}
+            documents={detail.documents}
+            clientId={detail.project.clientId}
+            clientName={detail.project.clientName}
+            onUpdated={loadDetail}
+          />
         </TabsContent>
 
         <TabsContent value="timeline">
@@ -409,18 +497,6 @@ export function AdminProjectPage() {
           <SettingsSection detail={detail} onUpdated={loadDetail} onDelete={handleDelete} deleting={deleting} />
         </TabsContent>
       </Tabs>
-      <div className="flex justify-end pt-8">
-        <Button
-          variant="destructive"
-          onClick={() => {
-            void handleDelete()
-          }}
-          disabled={deleting}
-        >
-          {deleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-          Eliminar proyecto
-        </Button>
-      </div>
     </div>
   )
 }
@@ -531,8 +607,27 @@ function PhotosSection({ projectId, photos, onUpdated }: PhotosSectionProps) {
                           className="group overflow-hidden rounded-2xl border border-[#E8E6E0] bg-[#FDFCF9]"
                         >
                           <div className="relative aspect-[4/3] overflow-hidden">
-                            <img src={photo.url ?? "/placeholder.svg"} alt={photo.caption ?? "Foto del proyecto"} className="h-full w-full object-cover" />
+                            {photo.url ? (
+                              <a href={photo.url} target="_blank" rel="noopener noreferrer" className="block h-full w-full">
+                                <img src={photo.url} alt={photo.caption ?? "Foto del proyecto"} className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105" />
+                              </a>
+                            ) : (
+                              <img src="/placeholder.svg" alt={photo.caption ?? "Foto del proyecto"} className="h-full w-full object-cover" />
+                            )}
                             <div className="absolute inset-0 flex items-center justify-end gap-2 bg-black/0 p-3 opacity-0 transition group-hover:bg-black/50 group-hover:opacity-100">
+                              {photo.url ? (
+                                <Button
+                                  asChild
+                                  size="icon"
+                                  variant="outline"
+                                  className="border-white/40 bg-white/20 text-white"
+                                  aria-label="Abrir foto en nueva pestaña"
+                                >
+                                  <a href={photo.url} target="_blank" rel="noopener noreferrer">
+                                    <ExternalLink className="h-4 w-4" />
+                                  </a>
+                                </Button>
+                              ) : null}
                               <Button size="icon" variant="outline" className="border-white/40 bg-white/20 text-white" onClick={() => handleDeletePhoto(photo.id)}>
                                 <Trash2 className="h-4 w-4" />
                               </Button>
@@ -561,11 +656,20 @@ function PhotosSection({ projectId, photos, onUpdated }: PhotosSectionProps) {
 interface DocumentsSectionProps {
   projectId: string
   documents: AdminProjectDocument[]
+  clientId?: string | null
+  clientName?: string | null
   onUpdated: () => Promise<void>
 }
 
-function DocumentsSection({ projectId, documents, onUpdated }: DocumentsSectionProps) {
+function DocumentsSection({ projectId, documents, clientId, clientName, onUpdated }: DocumentsSectionProps) {
   const [uploading, setUploading] = useState(false)
+  const [notifyClient, setNotifyClient] = useState(Boolean(clientId))
+  const [category, setCategory] = useState("General")
+  const [customCategory, setCustomCategory] = useState("")
+  const [notes, setNotes] = useState("")
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const MAX_UPLOAD_SIZE_BYTES = 150 * 1024 * 1024
 
   const groupedDocuments = useMemo(() => {
     const map = new Map<string, AdminProjectDocument[]>()
@@ -577,17 +681,47 @@ function DocumentsSection({ projectId, documents, onUpdated }: DocumentsSectionP
     return Array.from(map.entries())
   }, [documents])
 
-  const handleUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (!file) return
+  const availableCategories = useMemo(() => {
+    const set = new Set<string>(["General", "Contratos", "Planos", "Facturas"])
+    documents.forEach((doc) => {
+      if (doc.category) {
+        set.add(doc.category)
+      }
+    })
+    return Array.from(set.values())
+  }, [documents])
+
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] ?? null
+    if (file && file.size > MAX_UPLOAD_SIZE_BYTES) {
+      toast.error(`El archivo supera el límite de ${Math.round(MAX_UPLOAD_SIZE_BYTES / 1024 / 1024)} MB.`)
+      event.target.value = ""
+      return
+    }
+    setSelectedFile(file)
+  }
+
+  const handleUpload = async () => {
+    if (!selectedFile) {
+      toast.error("Selecciona un archivo para subirlo.")
+      return
+    }
     try {
       setUploading(true)
       await uploadAdminProjectDocument(projectId, {
-        file,
-        category: "General",
-        notifyClient: false,
+        file: selectedFile,
+        category: customCategory.trim().length > 0 ? customCategory.trim() : category,
+        notifyClient,
+        notes: notes.trim().length > 0 ? notes.trim() : undefined,
+        clientIds: notifyClient && clientId ? [clientId] : [],
       })
       toast.success("Documento subido")
+      setNotes("")
+      setCustomCategory("")
+      setSelectedFile(null)
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ""
+      }
       await onUpdated()
     } catch (error) {
       console.error(error)
@@ -611,18 +745,94 @@ function DocumentsSection({ projectId, documents, onUpdated }: DocumentsSectionP
 
   return (
     <Card className="border-[#E8E6E0]">
-      <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div>
-          <CardTitle className="text-[#2F4F4F]">Documentos del proyecto</CardTitle>
-          <p className="text-sm text-[#6B7280]">Planos, licencias y documentación clave para el cliente.</p>
+      <CardHeader className="space-y-6">
+        <div className="flex flex-col gap-2">
+          <CardTitle className="text-[#2F4F4F]">Docs & Entregables</CardTitle>
+          <p className="text-sm text-[#6B7280]">Organiza contratos, licencias y archivos para compartir con el cliente.</p>
         </div>
-        <Button variant="outline" asChild className="border-[#E8E6E0] text-[#2F4F4F]" disabled={uploading}>
-          <label className="flex cursor-pointer items-center gap-2">
-            <FileText className="h-4 w-4" />
-            {uploading ? "Subiendo…" : "Añadir documento"}
-            <input type="file" className="hidden" onChange={handleUpload} />
-          </label>
-        </Button>
+        <div className="grid gap-4 rounded-[1.5rem] border border-[#E8E6E0] bg-[#F8F7F4] p-5 lg:grid-cols-4">
+          <div className="space-y-2">
+            <label className="text-xs font-semibold uppercase tracking-[0.3em] text-[#C6B89E]">Categoría</label>
+            <select
+              value={category}
+              onChange={(event) => setCategory(event.target.value)}
+              className="h-10 w-full rounded-lg border border-[#E8E6E0] bg-white px-3 text-sm text-[#2F4F4F] focus:outline-none focus:ring-2 focus:ring-[#2F4F4F]/20"
+            >
+              {availableCategories.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs font-semibold uppercase tracking-[0.3em] text-[#C6B89E]">Notas</label>
+            <Input
+              value={notes}
+              onChange={(event) => setNotes(event.target.value)}
+              placeholder="Observaciones internas"
+              className="h-10 rounded-lg border-[#E8E6E0] bg-white text-sm text-[#2F4F4F]"
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs font-semibold uppercase tracking-[0.3em] text-[#C6B89E]">Nueva categoría</label>
+            <Input
+              value={customCategory}
+              onChange={(event) => setCustomCategory(event.target.value)}
+              placeholder="Ej. Licencias, Garantías..."
+              className="h-10 rounded-lg border-[#E8E6E0] bg-white text-sm text-[#2F4F4F]"
+            />
+            <p className="text-[11px] text-[#9CA3AF]">Déjalo vacío para usar la categoría seleccionada.</p>
+          </div>
+          <div className="flex flex-col justify-between gap-3 rounded-[1.25rem] border border-[#E8E6E0] bg-white p-4 shadow-apple">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-[#C6B89E]">Visibilidad</p>
+                <p className="text-sm text-[#2F4F4F]">
+                  {notifyClient && clientName ? `Compartir con ${clientName}` : "Solo equipo Terrazea"}
+                </p>
+              </div>
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border-[#E8E6E0]"
+                checked={notifyClient}
+                onChange={(event) => setNotifyClient(event.target.checked)}
+                disabled={!clientId}
+              />
+            </div>
+            {!clientId ? (
+              <p className="text-[11px] text-[#9CA3AF]">Asocia un cliente al proyecto para compartir documentos automáticamente.</p>
+            ) : null}
+            <div className="flex flex-col gap-2">
+              <Button variant="outline" asChild className="h-10 rounded-full border-[#E8E6E0] text-[#2F4F4F]" disabled={uploading}>
+                <label className="flex cursor-pointer items-center justify-center gap-2">
+                  <FileText className="h-4 w-4" />
+                  {selectedFile ? "Cambiar archivo" : "Seleccionar archivo"}
+                  <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileSelect} />
+                </label>
+              </Button>
+              {selectedFile ? (
+                <p className="rounded-full bg-[#F8F7F4] px-3 py-1 text-xs text-[#4B5563]">
+                  {selectedFile.name} · {formatFileSize(selectedFile.size)}
+                </p>
+              ) : (
+                <p className="text-[11px] text-[#9CA3AF]">
+                  Selecciona el archivo antes de subirlo. Máximo {Math.round(MAX_UPLOAD_SIZE_BYTES / 1024 / 1024)} MB.
+                </p>
+              )}
+              <Button
+                className="h-10 rounded-full bg-[#2F4F4F] text-white shadow-apple hover:bg-[#1F3535]"
+                onClick={() => {
+                  void handleUpload()
+                }}
+                disabled={uploading || !selectedFile}
+              >
+                {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Subir documento
+              </Button>
+            </div>
+          </div>
+        </div>
       </CardHeader>
       <CardContent className="space-y-4">
         {groupedDocuments.length === 0 ? (
@@ -630,34 +840,72 @@ function DocumentsSection({ projectId, documents, onUpdated }: DocumentsSectionP
             Aún no hay documentos registrados.
           </div>
         ) : (
-          groupedDocuments.map(([category, docs]) => (
-            <div key={category} className="space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold uppercase tracking-[0.3em] text-[#C6B89E]">{category}</h3>
-                <span className="text-xs text-[#9CA3AF]">{docs.length} documento(s)</span>
-              </div>
+          groupedDocuments.map(([groupCategory, docs]) => (
+            <section key={groupCategory} className="space-y-4 rounded-[1.5rem] border border-[#E8E6E0] bg-white/95 p-5 shadow-apple">
+              <header className="flex flex-wrap items-center justify-between gap-3">
+                <h3 className="text-sm font-semibold uppercase tracking-[0.3em] text-[#C6B89E]">{groupCategory}</h3>
+                <span className="rounded-full bg-[#F8F7F4] px-3 py-1 text-xs text-[#4B5563]">
+                  {docs.length} documento{docs.length === 1 ? "" : "s"}
+                </span>
+              </header>
               <div className="grid gap-3 md:grid-cols-2">
                 {docs.map((doc) => (
-                  <div key={doc.id} className="rounded-2xl border border-[#E8E6E0] bg-[#FDFCF9] p-4 text-sm text-[#4B5563]">
-                    <div className="flex items-center justify-between gap-2">
-                      <div>
-                        <p className="font-medium text-[#2F4F4F]">{doc.name}</p>
+                  <article key={doc.id} className="flex flex-col gap-3 rounded-[1.25rem] border border-[#E8E6E0] bg-[#FDFCF9] p-4 text-sm text-[#4B5563]">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="space-y-1">
+                        {doc.url ? (
+                          <a
+                            href={doc.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-2 font-medium text-[#2F4F4F] hover:underline"
+                          >
+                            <FileText className="h-4 w-4" />
+                            {doc.name}
+                          </a>
+                        ) : (
+                          <p className="font-medium text-[#2F4F4F]">{doc.name}</p>
+                        )}
                         <p className="text-xs text-[#9CA3AF]">
                           {doc.fileType} · {doc.sizeLabel ?? "Tamaño desconocido"}
                         </p>
+                        {doc.notes ? <p className="text-xs text-[#6B7280]">{doc.notes}</p> : null}
                       </div>
                       <div className="flex items-center gap-2">
-                        <Badge className="bg-[#2F4F4F] text-white">{doc.status}</Badge>
+                        <Badge className={doc.notifyClient ? "bg-[#2563EB] text-white" : "bg-[#2F4F4F] text-white"}>
+                          {doc.notifyClient ? "Visible cliente" : "Interno"}
+                        </Badge>
+                        {doc.url ? (
+                          <Button
+                            asChild
+                            variant="ghost"
+                            size="icon"
+                            className="text-[#2F4F4F]"
+                            aria-label="Abrir documento en nueva pestaña"
+                          >
+                            <a href={doc.url} target="_blank" rel="noopener noreferrer">
+                              <ExternalLink className="h-4 w-4" />
+                            </a>
+                          </Button>
+                        ) : null}
                         <Button variant="ghost" size="icon" onClick={() => handleDeleteDocument(doc.id)}>
                           <Trash2 className="h-4 w-4 text-[#B91C1C]" />
                         </Button>
                       </div>
                     </div>
-                    {doc.notes ? <p className="mt-3 text-xs text-[#6B7280]">{doc.notes}</p> : null}
-                  </div>
+                    {doc.tags && doc.tags.length > 0 ? (
+                      <div className="flex flex-wrap gap-2">
+                        {doc.tags.map((tag) => (
+                          <span key={tag} className="rounded-full bg-[#F1F0EA] px-2 py-0.5 text-[11px] text-[#4B5563]">
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+                  </article>
                 ))}
               </div>
-            </div>
+            </section>
           ))
         )}
       </CardContent>
@@ -714,19 +962,46 @@ function TimelineSection({ projectId, timeline, onUpdated }: TimelineSectionProp
           </Button>
         </form>
 
-        <div className="space-y-3">
-          {timeline.length === 0 ? (
-            <p className="text-sm text-[#6B7280]">Aún no hay eventos registrados.</p>
-          ) : (
-            timeline.map((event) => (
-              <div key={event.id} className="rounded-[1.25rem] border border-[#E8E6E0] bg-white p-4 text-sm text-[#4B5563]">
-                <p className="text-xs uppercase tracking-[0.2em] text-[#C6B89E]">{formatDateTime(event.occurredAt)}</p>
-                <p className="mt-1 font-medium text-[#2F4F4F]">{event.title}</p>
-                {event.description ? <p className="mt-1 text-xs text-[#6B7280]">{event.description}</p> : null}
-              </div>
-            ))
-          )}
-        </div>
+        {timeline.length === 0 ? (
+          <p className="rounded-[1.25rem] border border-dashed border-[#E8E6E0] bg-[#F8F7F4] p-8 text-center text-sm text-[#6B7280]">
+            Aún no hay eventos registrados. Cada hito aparecerá aquí dentro de la línea temporal visual.
+          </p>
+        ) : (
+          <div className="relative">
+            <div className="absolute left-4 top-3 bottom-3 w-px bg-[#E8E6E0]" aria-hidden />
+            <div className="space-y-6">
+              {timeline.map((event) => {
+                const styles = resolveTimelineStyles(event.status)
+                return (
+                  <div key={event.id} className="relative pl-14">
+                    <div
+                      className={`absolute left-[7px] top-4 grid h-6 w-6 place-content-center rounded-full border-2 bg-white ${styles.ring}`}
+                    >
+                      <span className={`h-2.5 w-2.5 rounded-full ${styles.dot}`} />
+                    </div>
+                    <div className={`rounded-[1.5rem] border ${styles.border} bg-white/95 p-5 shadow-apple transition`}>
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <p className="text-xs uppercase tracking-[0.25em] text-[#C6B89E]">
+                          {formatDateTime(event.occurredAt)}
+                        </p>
+                        <span
+                          className={`rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] ${styles.badge}`}
+                        >
+                          {event.eventType || event.status}
+                        </span>
+                      </div>
+                      <h4 className="mt-2 font-heading text-base font-semibold text-[#2F4F4F]">{event.title}</h4>
+                      {event.description ? <p className="mt-3 text-sm text-[#4B5563]">{event.description}</p> : null}
+                      {event.actorName ? (
+                        <p className="mt-3 text-xs text-[#9CA3AF]">Registrado por {event.actorName}</p>
+                      ) : null}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   )

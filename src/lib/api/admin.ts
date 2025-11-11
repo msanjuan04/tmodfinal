@@ -13,8 +13,11 @@ import type {
   AdminProjectDocument,
   AdminProjectPhoto,
   AdminProjectTeamMember,
+  AdminPaymentRecord,
+  AdminPaymentsResponse,
 } from "@app/types/admin"
 import type { DocumentsData } from "@app/types/documents"
+import type { MessagesData } from "@/lib/supabase/queries"
 
 export interface CreateAdminClientPayload {
   fullName: string
@@ -180,6 +183,31 @@ export async function deleteAdminProjectMilestone(projectId: string, milestoneId
   await api.delete(`/admin/projects/${projectId}/milestones/${milestoneId}`)
 }
 
+export interface CreateAdminPaymentPayload {
+  projectId: string
+  concept: string
+  description?: string
+  amount: number
+  currency?: string
+  dueDate?: string | null
+  attachment?: {
+    name: string
+    fileType: string
+    sizeLabel?: string
+    content: string
+  }
+}
+
+export async function fetchAdminPayments(): Promise<AdminPaymentsResponse> {
+  const response = await api.get<AdminPaymentsResponse>("/admin/payments")
+  return response.data
+}
+
+export async function createAdminPayment(payload: CreateAdminPaymentPayload): Promise<AdminPaymentRecord> {
+  const response = await api.post<{ payment: AdminPaymentRecord }>("/admin/payments", payload)
+  return response.data.payment
+}
+
 export async function createAdminProjectPhase(projectId: string, payload: Partial<AdminProjectPhase> & { name: string }) {
   const response = await api.post<{ id: string }>(`/admin/projects/${projectId}/phases`, payload)
   return response.data.id
@@ -204,6 +232,7 @@ export interface UploadAdminProjectDocumentInput {
   tags?: string[]
   notes?: string
   uploadedBy?: string
+  clientIds?: string[]
 }
 
 export async function uploadAdminProjectDocument(projectId: string, input: UploadAdminProjectDocumentInput) {
@@ -218,6 +247,7 @@ export async function uploadAdminProjectDocument(projectId: string, input: Uploa
     tags: input.tags ?? [],
     notes: input.notes ?? null,
     uploadedBy: input.uploadedBy,
+    clientIds: input.clientIds ?? [],
     fileContent: base64,
   })
   return response.data
@@ -275,6 +305,27 @@ export async function fetchAdminDocuments(projectSlug?: string): Promise<Documen
   })
 
   return response.data
+}
+
+export async function fetchAdminMessages(projectSlug?: string): Promise<MessagesData> {
+  const response = await api.get<MessagesData>("/admin/messages", {
+    params: projectSlug ? { project: projectSlug } : undefined,
+  })
+  return response.data
+}
+
+export async function createAdminConversation(projectSlug: string, teamMemberId: string): Promise<{ conversationId: string }> {
+  const response = await api.post<{ conversationId: string }>("/admin/messages", {
+    projectSlug,
+    teamMemberId,
+  })
+  return response.data
+}
+
+export async function sendAdminMessage(conversationId: string, content: string) {
+  await api.post(`/admin/messages/${conversationId}/messages`, {
+    content,
+  })
 }
 
 export interface AdminDashboardFilters {

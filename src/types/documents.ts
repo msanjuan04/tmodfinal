@@ -8,6 +8,8 @@ export interface DocumentRow {
   sizeLabel: string | null
   uploadedAt: string | null
   status: DocumentStatus
+  viewUrl: string | null
+  downloadUrl: string | null
 }
 
 export interface DocumentsStats {
@@ -16,6 +18,7 @@ export interface DocumentsStats {
   plans: number
   certificates: number
   warranties: number
+  budgets: number
 }
 
 export interface DocumentsData {

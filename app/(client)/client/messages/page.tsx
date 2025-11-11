@@ -32,5 +32,5 @@ export default async function MessagesPage({ searchParams }: MessagesPageProps) 
 
   const data = await getMessages(activeProjectSlug)
 
-  return <MessagesView data={data} />
+  return <MessagesView data={data} viewerType="client" />
 }

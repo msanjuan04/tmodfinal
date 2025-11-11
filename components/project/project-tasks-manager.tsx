@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { DragDropContext, Droppable, Draggable, type DropResult } from "@hello-pangea/dnd"
 import { toast } from "sonner"
 import { format, parseISO, isBefore, isValid } from "date-fns"
@@ -23,6 +23,7 @@ import {
   Users,
   Search as SearchIcon,
   Layers,
+  Info,
 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
@@ -144,6 +145,7 @@ export function ProjectTasksManager({
   const [pageSize] = useState(20)
 
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [tasks, setTasks] = useState<AdminProjectTask[]>([])
   const [stats, setStats] = useState<AdminProjectTaskListResponse["stats"]>({
@@ -170,6 +172,7 @@ export function ProjectTasksManager({
   const [activityHistory, setActivityHistory] = useState<AdminProjectTaskActivity[]>([])
   const [activityLoading, setActivityLoading] = useState(false)
   const [progress, setProgress] = useState(initialProgress)
+  const tasksRef = useRef<AdminProjectTask[]>([])
 
   const combinedAssignees = useMemo(() => {
     const map = new Map<string, string>()
@@ -185,8 +188,17 @@ export function ProjectTasksManager({
     return Array.from(map.entries()).map(([id, name]) => ({ id, name }))
   }, [assignees, teamMembers, tasks])
 
+  useEffect(() => {
+    tasksRef.current = tasks
+  }, [tasks])
+
   const fetchTasks = useCallback(async () => {
-    setLoading(true)
+    const showInitialLoading = tasksRef.current.length === 0
+    if (showInitialLoading) {
+      setLoading(true)
+    } else {
+      setRefreshing(true)
+    }
     setError(null)
     try {
       const response = await fetchAdminProjectTasks(projectId, {
@@ -217,6 +229,7 @@ export function ProjectTasksManager({
       setError("No se pudieron obtener las tareas. Inténtalo mas tarde.")
     } finally {
       setLoading(false)
+      setRefreshing(false)
     }
   }, [
     projectId,
@@ -259,6 +272,8 @@ export function ProjectTasksManager({
     )
     return grouped
   }, [tasks])
+
+  const usesFallbackTasks = useMemo(() => tasks.some((task) => task.id.startsWith("phase-")), [tasks])
 
   const completedLabel = `${stats.done}/${stats.total}`
   const dueSummaryLabel =
@@ -346,6 +361,10 @@ export function ProjectTasksManager({
   }
 
   const handleDragEnd = async (result: DropResult) => {
+    if (usesFallbackTasks) {
+      toast.warning("Primero migra la tabla project_tasks en Supabase para poder reordenar tareas.")
+      return
+    }
     const { destination, source, draggableId } = result
     if (!destination) return
     if (destination.droppableId === source.droppableId && destination.index === source.index) return
@@ -353,26 +372,56 @@ export function ProjectTasksManager({
     const sourceStatus = source.droppableId as ProjectTaskStatus
     const destStatus = destination.droppableId as ProjectTaskStatus
 
-    const updated = [...tasks]
-    const draggedIndex = updated.findIndex((task) => task.id === draggableId)
-    if (draggedIndex === -1) return
-    const [dragged] = updated.splice(draggedIndex, 1)
-    const targetIndex = destination.index
-    const inserted = { ...dragged, status: destStatus }
+    const statuses: ProjectTaskStatus[] = ["todo", "in_progress", "blocked", "review", "done"]
+    const lists: Record<ProjectTaskStatus, AdminProjectTask[]> = {
+      todo: [],
+      in_progress: [],
+      blocked: [],
+      review: [],
+      done: [],
+    }
 
-    const destTasks = updated.filter((task) => task.status === destStatus)
-    destTasks.splice(targetIndex, 0, inserted)
+    tasks.forEach((task) => {
+      const key = (task.status as ProjectTaskStatus) ?? "todo"
+      lists[key]?.push({ ...task })
+    })
 
-    const newPositions = destTasks.map((task, index) => ({
+    const sourceList = lists[sourceStatus]
+    const destList = lists[destStatus]
+    const sourceIndex = sourceList.findIndex((task) => task.id === draggableId)
+    if (sourceIndex === -1) return
+
+    const [moved] = sourceList.splice(sourceIndex, 1)
+    const updatedTask = { ...moved, status: destStatus }
+    destList.splice(destination.index, 0, updatedTask)
+
+    const normalize = (list: AdminProjectTask[], status: ProjectTaskStatus) => {
+      const columnIndex = statuses.indexOf(status)
+      const basePosition = columnIndex >= 0 ? columnIndex * 100000 : 0
+      return list.map((task, index) => ({
+        ...task,
+        status,
+        position: basePosition + (index + 1) * 1000,
+      }))
+    }
+
+    statuses.forEach((status) => {
+      lists[status] = normalize(lists[status], status)
+    })
+
+    const nextTasks = statuses.flatMap((status) => lists[status])
+    const payload: Array<{ id: string; status: ProjectTaskStatus; position: number }> = nextTasks.map((task) => ({
       id: task.id,
-      status: destStatus,
-      position: (index + 1) * 1000,
+      status: task.status as ProjectTaskStatus,
+      position: task.position,
     }))
 
-    setTasks(updated.filter((task) => task.status !== destStatus).concat(destTasks))
+    setTasks(nextTasks)
 
     try {
-      await reorderAdminProjectTasks(projectId, newPositions)
+      if (payload.length > 0) {
+        await reorderAdminProjectTasks(projectId, payload)
+      }
       await fetchTasks()
     } catch (err) {
       console.error(err)
@@ -486,50 +535,57 @@ export function ProjectTasksManager({
                   Nueva tarea
                 </Button>
               </SheetTrigger>
-              <SheetContent side="right" className="w-full sm:max-w-md">
-                <SheetHeader>
-                  <SheetTitle className="font-heading text-xl text-[#2F4F4F]">
+              <SheetContent side="right" className="w-full gap-0 bg-[#F8F7F4]/95 p-0 sm:max-w-xl">
+                <SheetHeader className="gap-2 border-b border-[#E8E6E0] bg-white/95 px-6 py-5">
+                  <SheetTitle className="font-heading text-2xl text-[#2F4F4F]">
                     {editingTask ? "Editar tarea" : "Crear nueva tarea"}
                   </SheetTitle>
+                  <p className="text-sm text-[#6B7280]">
+                    Define los detalles, asigna responsables y sincroniza con el calendario.
+                  </p>
                 </SheetHeader>
-                <TaskForm
-                  saving={isSaving}
-                  initialValues={
-                    editingTask
-                      ? {
-                          title: editingTask.title,
-                          description: editingTask.description ?? "",
-                          status: editingTask.status as ProjectTaskStatus,
-                          weight: editingTask.weight,
-                          assigneeId: editingTask.assigneeId ?? "",
-                          startDate: editingTask.startDate ?? "",
-                          dueDate: editingTask.dueDate ?? "",
+                <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+                  <div className="flex-1 overflow-y-auto px-6 pb-6">
+                    <TaskForm
+                      saving={isSaving}
+                      initialValues={
+                        editingTask
+                          ? {
+                              title: editingTask.title,
+                              description: editingTask.description ?? "",
+                              status: editingTask.status as ProjectTaskStatus,
+                              weight: editingTask.weight,
+                              assigneeId: editingTask.assigneeId ?? "",
+                              startDate: editingTask.startDate ?? "",
+                              dueDate: editingTask.dueDate ?? "",
+                            }
+                          : DEFAULT_FORM
+                      }
+                      teamMembers={combinedAssignees}
+                      onSubmit={async (values) => {
+                        if (editingTask) {
+                          await handleUpdateTask(editingTask.id, {
+                            title: values.title,
+                            description: values.description,
+                            status: values.status,
+                            weight: values.weight,
+                            assigneeId: values.assigneeId || null,
+                            startDate: values.startDate || null,
+                            dueDate: values.dueDate || null,
+                          })
+                          setTaskFormOpen(false)
+                          setEditingTask(null)
+                        } else {
+                          await handleCreateTask(values)
                         }
-                      : DEFAULT_FORM
-                  }
-                  teamMembers={combinedAssignees}
-                  onSubmit={async (values) => {
-                    if (editingTask) {
-                      await handleUpdateTask(editingTask.id, {
-                        title: values.title,
-                        description: values.description,
-                        status: values.status,
-                        weight: values.weight,
-                        assigneeId: values.assigneeId || null,
-                        startDate: values.startDate || null,
-                        dueDate: values.dueDate || null,
-                      })
-                      setTaskFormOpen(false)
-                      setEditingTask(null)
-                    } else {
-                      await handleCreateTask(values)
-                    }
-                  }}
-                  onCancel={() => {
-                    setTaskFormOpen(false)
-                    setEditingTask(null)
-                  }}
-                />
+                      }}
+                      onCancel={() => {
+                        setTaskFormOpen(false)
+                        setEditingTask(null)
+                      }}
+                    />
+                  </div>
+                </div>
               </SheetContent>
             </Sheet>
           </div>
@@ -570,6 +626,18 @@ export function ProjectTasksManager({
         onBulkAssignee={(assigneeId) => handleBulkUpdate({ assigneeId })}
       />
 
+      {usesFallbackTasks ? (
+        <div className="flex items-start gap-3 rounded-2xl border border-[#FCD34D] bg-[#FFFBEB] p-4 text-sm text-[#92400E]">
+          <Info className="mt-0.5 h-4 w-4 text-[#D97706]" />
+          <div>
+            El tablero está usando tareas de respaldo generadas desde las fases del proyecto. Ejecuta las migraciones del
+            archivo <code className="rounded bg-white/70 px-1 py-0.5 font-mono text-xs text-[#92400E]">supabase/schema.sql</code>{" "}
+            (sección <code className="rounded bg-white/70 px-1 py-0.5 font-mono text-xs text-[#92400E]">project_tasks</code>) en Supabase para
+            habilitar el guardado real del drag & drop. Mientras tanto el reordenamiento está desactivado para evitar errores.
+          </div>
+        </div>
+      ) : null}
+
       {error ? (
         <Card className="border-[#FCA5A5] bg-[#FEF2F2]">
           <CardContent className="flex items-center gap-3 py-6 text-sm text-[#B91C1C]">
@@ -599,6 +667,8 @@ export function ProjectTasksManager({
           onAddToCalendar={handleAddToCalendar}
           onActivity={openActivity}
           isOverdue={isOverdue}
+          refreshing={refreshing}
+          reorderDisabled={usesFallbackTasks}
         />
       ) : (
         <TaskTable
@@ -620,6 +690,7 @@ export function ProjectTasksManager({
           onSelectionChange={setSelection}
           assignees={combinedAssignees}
           isOverdue={isOverdue}
+          refreshing={refreshing}
         />
       )}
 
@@ -894,6 +965,8 @@ function KanbanBoard({
   onAddToCalendar,
   onActivity,
   isOverdue,
+  refreshing = false,
+  reorderDisabled = false,
 }: {
   columns: Array<{ id: ProjectTaskStatus; title: string; description: string }>
   groupedTasks: Record<ProjectTaskStatus, AdminProjectTask[]>
@@ -905,14 +978,30 @@ function KanbanBoard({
   onAddToCalendar: (task: AdminProjectTask) => void
   onActivity: (task: AdminProjectTask) => void
   isOverdue: (task: AdminProjectTask) => boolean
+  refreshing?: boolean
+  reorderDisabled?: boolean
 }) {
   return (
     <Card className="border-[#E8E6E0] bg-white/90">
-      <CardContent className="overflow-x-auto py-6">
+      <CardContent className="relative overflow-x-auto py-6">
+        {reorderDisabled ? (
+          <div className="mb-4 flex items-start gap-2 rounded-2xl border border-[#FCD34D] bg-[#FFFBEB] px-4 py-3 text-xs text-[#92400E]">
+            <Info className="mt-0.5 h-3.5 w-3.5 text-[#D97706]" />
+            Arrastra deshabilitado: crea la tabla{" "}
+            <code className="rounded bg-white/70 px-1 py-0.5 font-mono text-[10px] text-[#92400E]">project_tasks</code> en Supabase para mover tareas
+            entre columnas.
+          </div>
+        ) : null}
+        {refreshing ? (
+          <div className="pointer-events-none absolute right-6 top-4 flex items-center gap-2 rounded-full bg-white/90 px-3 py-1 text-xs text-[#4B5563] shadow-apple">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            Actualizando...
+          </div>
+        ) : null}
         <DragDropContext onDragEnd={onDragEnd}>
           <div className="grid min-w-[960px] gap-4 lg:grid-cols-5">
             {columns.map((column) => (
-              <Droppable droppableId={column.id} key={column.id}>
+              <Droppable droppableId={column.id} key={column.id} isDropDisabled={reorderDisabled}>
                 {(provided) => (
                   <div
                     ref={provided.innerRef}
@@ -926,7 +1015,7 @@ function KanbanBoard({
                       <p className="text-xs text-[#6B7280]">{column.description}</p>
                     </div>
                     {groupedTasks[column.id].map((task, index) => (
-                      <Draggable draggableId={task.id} index={index} key={task.id}>
+                      <Draggable draggableId={task.id} index={index} key={task.id} isDragDisabled={reorderDisabled}>
                         {(dragProvided, snapshot) => (
                           <div
                             ref={dragProvided.innerRef}
@@ -1035,6 +1124,7 @@ interface TaskTableProps {
   onSelectionChange: (value: Set<string>) => void
   assignees: Array<{ id: string; name: string }>
   isOverdue: (task: AdminProjectTask) => boolean
+  refreshing?: boolean
 }
 
 function TaskTable({
@@ -1053,6 +1143,7 @@ function TaskTable({
   onSelectionChange,
   assignees,
   isOverdue,
+  refreshing = false,
 }: TaskTableProps) {
   const totalPages = Math.max(Math.ceil(total / pageSize), 1)
 
@@ -1076,7 +1167,13 @@ function TaskTable({
 
   return (
     <Card className="border-[#E8E6E0] bg-white/90">
-      <CardContent className="overflow-x-auto py-4">
+      <CardContent className="relative overflow-x-auto py-4">
+        {refreshing ? (
+          <div className="pointer-events-none absolute right-6 top-3 flex items-center gap-2 rounded-full bg-white/90 px-3 py-1 text-xs text-[#4B5563] shadow-apple">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            Actualizando...
+          </div>
+        ) : null}
         <table className="min-w-full divide-y divide-[#E5E7EB] text-sm text-[#4B5563]">
           <thead className="bg-[#F8F7F4] text-xs uppercase tracking-[0.25em] text-[#C6B89E]">
             <tr>
@@ -1309,91 +1406,135 @@ function TaskForm({ initialValues, onSubmit, onCancel, saving, teamMembers }: Ta
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex h-full flex-col gap-5 pt-6">
-      <div className="space-y-3">
-        <label className="text-xs font-semibold text-[#2F4F4F]">Título</label>
-        <Input
-          value={formState.title}
-          onChange={(event) => handleChange("title", event.target.value)}
-          placeholder="Instalación de pérgola"
-          required
-        />
-      </div>
-      <div className="space-y-3">
-        <label className="text-xs font-semibold text-[#2F4F4F]">Descripción</label>
-        <Textarea
-          value={formState.description}
-          onChange={(event) => handleChange("description", event.target.value)}
-          rows={4}
-          placeholder="Detalles, dependencias, materiales..."
-        />
-      </div>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div className="space-y-2">
-          <label className="text-xs font-semibold text-[#2F4F4F]">Estado</label>
-          <select
-            value={formState.status}
-            onChange={(event) => handleChange("status", event.target.value as ProjectTaskStatus)}
-            className="w-full rounded-lg border border-[#E8E6E0] bg-white px-3 py-2 text-sm text-[#2F4F4F] focus:outline-none focus:ring-2 focus:ring-[#2F4F4F]/20"
-          >
-            {STATUS_COLUMNS.map((column) => (
-              <option key={column.id} value={column.id}>
-                {column.title}
-              </option>
-            ))}
-          </select>
+    <form onSubmit={handleSubmit} className="space-y-6 pb-16">
+      <section className="space-y-5 rounded-[1.75rem] border border-[#E8E6E0] bg-white/95 p-6 shadow-apple-md">
+        <div className="space-y-1">
+          <p className="text-xs uppercase tracking-[0.3em] text-[#C6B89E]">Detalles</p>
+          <h3 className="font-heading text-lg text-[#2F4F4F]">Información principal</h3>
+          <p className="text-sm text-[#6B7280]">Describe la tarea para que el equipo la identifique rápido.</p>
         </div>
-        <div className="space-y-2">
-          <label className="text-xs font-semibold text-[#2F4F4F]">Peso</label>
-          <select
-            value={formState.weight}
-            onChange={(event) => handleChange("weight", Number(event.target.value))}
-            className="w-full rounded-lg border border-[#E8E6E0] bg-white px-3 py-2 text-sm text-[#2F4F4F] focus:outline-none focus:ring-2 focus:ring-[#2F4F4F]/20"
-          >
-            {WEIGHT_OPTIONS.map((weight) => (
-              <option key={weight} value={weight}>
-                {weight.toFixed(2)}
-              </option>
-            ))}
-          </select>
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-[#2F4F4F]">Título</label>
+            <Input
+              value={formState.title}
+              onChange={(event) => handleChange("title", event.target.value)}
+              placeholder="Instalación de pérgola"
+              required
+              className="h-12 rounded-[1rem] border border-[#E8E6E0] bg-[#F8F7F4] px-4 text-sm text-[#2F4F4F] focus:border-[#2F4F4F] focus:ring-[#2F4F4F]/20"
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-[#2F4F4F]">Descripción</label>
+            <Textarea
+              value={formState.description}
+              onChange={(event) => handleChange("description", event.target.value)}
+              rows={4}
+              placeholder="Añade contexto, dependencias o materiales clave."
+              className="min-h-[140px] rounded-[1rem] border border-[#E8E6E0] bg-[#F8F7F4] px-4 py-3 text-sm text-[#2F4F4F] focus:border-[#2F4F4F] focus:ring-[#2F4F4F]/20"
+            />
+          </div>
         </div>
-      </div>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div className="space-y-2">
-          <label className="text-xs font-semibold text-[#2F4F4F]">Inicio</label>
-          <Input
-            type="date"
-            value={formState.startDate}
-            onChange={(event) => handleChange("startDate", event.target.value)}
-          />
+      </section>
+
+      <section className="space-y-5 rounded-[1.75rem] border border-[#E8E6E0] bg-white/95 p-6 shadow-apple-md">
+        <div className="space-y-1">
+          <p className="text-xs uppercase tracking-[0.3em] text-[#C6B89E]">Planificación</p>
+          <h3 className="font-heading text-lg text-[#2F4F4F]">Seguimiento y asignación</h3>
+          <p className="text-sm text-[#6B7280]">
+            Ajusta el estado, los pesos y quién se encarga para mantener el tablero sincronizado.
+          </p>
         </div>
-        <div className="space-y-2">
-          <label className="text-xs font-semibold text-[#2F4F4F]">Fecha límite</label>
-          <Input type="date" value={formState.dueDate} onChange={(event) => handleChange("dueDate", event.target.value)} />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-[#2F4F4F]">Estado</label>
+            <select
+              value={formState.status}
+              onChange={(event) => handleChange("status", event.target.value as ProjectTaskStatus)}
+              className="h-12 w-full rounded-[1rem] border border-[#E8E6E0] bg-[#F8F7F4] px-4 text-sm text-[#2F4F4F] focus:border-[#2F4F4F] focus:ring-[#2F4F4F]/20"
+            >
+              {STATUS_COLUMNS.map((column) => (
+                <option key={column.id} value={column.id}>
+                  {column.title}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-[#2F4F4F]">Peso</label>
+            <select
+              value={formState.weight}
+              onChange={(event) => handleChange("weight", Number(event.target.value))}
+              className="h-12 w-full rounded-[1rem] border border-[#E8E6E0] bg-[#F8F7F4] px-4 text-sm text-[#2F4F4F] focus:border-[#2F4F4F] focus:ring-[#2F4F4F]/20"
+            >
+              {WEIGHT_OPTIONS.map((weight) => (
+                <option key={weight} value={weight}>
+                  {weight.toFixed(2)}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-[#2F4F4F]">Inicio</label>
+            <Input
+              type="date"
+              value={formState.startDate}
+              onChange={(event) => handleChange("startDate", event.target.value)}
+              className="h-12 rounded-[1rem] border border-[#E8E6E0] bg-[#F8F7F4] px-4 text-sm text-[#2F4F4F] focus:border-[#2F4F4F] focus:ring-[#2F4F4F]/20"
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-[#2F4F4F]">Fecha límite</label>
+            <Input
+              type="date"
+              value={formState.dueDate}
+              onChange={(event) => handleChange("dueDate", event.target.value)}
+              className="h-12 rounded-[1rem] border border-[#E8E6E0] bg-[#F8F7F4] px-4 text-sm text-[#2F4F4F] focus:border-[#2F4F4F] focus:ring-[#2F4F4F]/20"
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-[#2F4F4F]">Responsable</label>
+              <select
+                value={formState.assigneeId}
+                onChange={(event) => handleChange("assigneeId", event.target.value)}
+                className="h-12 w-full rounded-[1rem] border border-[#E8E6E0] bg-[#F8F7F4] px-4 text-sm text-[#2F4F4F] focus:border-[#2F4F4F] focus:ring-[#2F4F4F]/20"
+              >
+                <option value="">Sin responsable</option>
+                {teamMembers.map((member) => (
+                  <option key={member.id} value={member.id}>
+                    {member.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
         </div>
-      </div>
-      <div className="space-y-2">
-        <label className="text-xs font-semibold text-[#2F4F4F]">Responsable</label>
-        <select
-          value={formState.assigneeId}
-          onChange={(event) => handleChange("assigneeId", event.target.value)}
-          className="w-full rounded-lg border border-[#E8E6E0] bg-white px-3 py-2 text-sm text-[#2F4F4F] focus:outline-none focus:ring-2 focus:ring-[#2F4F4F]/20"
-        >
-          <option value="">Sin responsable</option>
-          {teamMembers.map((member) => (
-            <option key={member.id} value={member.id}>
-              {member.name}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div className="mt-auto flex justify-end gap-3">
-        <Button type="button" variant="ghost" onClick={onCancel} className="text-[#4B5563] hover:bg-[#F5F5F5]">
-          Cancelar
-        </Button>
-        <Button type="submit" className="bg-[#2F4F4F] text-white hover:bg-[#1F3535]" disabled={saving}>
-          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Guardar"}
-        </Button>
+      </section>
+
+      <div className="rounded-[1.75rem] border border-[#E8E6E0] bg-white/95 p-5 shadow-apple-md">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-xs text-[#6B7280]">
+            Al guardar se actualizarán el tablero, el calendario y los indicadores del proyecto.
+          </p>
+          <div className="flex items-center gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onCancel}
+              className="h-11 rounded-full border-[#E8E6E0] bg-white px-5 text-sm font-medium text-[#4B5563] shadow-apple transition hover:bg-[#F8F7F4]"
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="submit"
+              className="h-11 rounded-full bg-[#2F4F4F] px-6 text-sm font-semibold text-white shadow-apple transition hover:bg-[#1F3535]"
+              disabled={saving}
+            >
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Guardar"}
+            </Button>
+          </div>
+        </div>
       </div>
     </form>
   )

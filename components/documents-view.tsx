@@ -11,7 +11,12 @@ import { ChevronRight, Download, Eye, File, FileSpreadsheet, FileText, Filter, I
 
 import type { DocumentsData } from "@app/types/documents"
 
-export function DocumentsView({ data }: { data: DocumentsData }) {
+interface DocumentsViewProps {
+  data: DocumentsData
+  showHeader?: boolean
+}
+
+export function DocumentsView({ data, showHeader = true }: DocumentsViewProps) {
   const [searchQuery, setSearchQuery] = useState("")
 
   const filteredDocuments = useMemo(() => {
@@ -25,28 +30,31 @@ export function DocumentsView({ data }: { data: DocumentsData }) {
   const plansDocuments = filteredDocuments.filter((doc) => doc.category.toLowerCase() === "planos")
   const certificatesDocuments = filteredDocuments.filter((doc) => doc.category.toLowerCase() === "certificados")
   const legalDocuments = filteredDocuments.filter((doc) => doc.category.toLowerCase() === "legal")
+  const budgetDocuments = filteredDocuments.filter((doc) => doc.category.toLowerCase() === "presupuestos")
 
   return (
     <div className="space-y-8">
-      <header>
-        <div className="flex items-center gap-2 text-sm text-[#6b7280]">
-          <span>Dashboard</span>
-          <ChevronRight className="h-4 w-4" />
-          <span className="text-[#2f4f4f]">Documentos</span>
-        </div>
-        <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h1 className="font-serif text-3xl font-bold text-[#2f4f4f] sm:text-4xl">Documentos del Proyecto</h1>
-            <p className="mt-2 text-lg text-[#6b7280]">Accede a toda la documentación técnica y legal</p>
+      {showHeader ? (
+        <header>
+          <div className="flex items-center gap-2 text-sm text-[#6b7280]">
+            <span>Dashboard</span>
+            <ChevronRight className="h-4 w-4" />
+            <span className="text-[#2f4f4f]">Documentos</span>
           </div>
-          <Button className="bg-[#2f4f4f] text-white hover:bg-[#1f3535]">
-            <Download className="mr-2 h-4 w-4" />
-            Descargar Todo
-          </Button>
-        </div>
-      </header>
+          <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h1 className="font-serif text-3xl font-bold text-[#2f4f4f] sm:text-4xl">Documentos del Proyecto</h1>
+              <p className="mt-2 text-lg text-[#6b7280]">Accede a toda la documentación técnica y legal</p>
+            </div>
+            <Button className="bg-[#2f4f4f] text-white hover:bg-[#1f3535]">
+              <Download className="mr-2 h-4 w-4" />
+              Descargar Todo
+            </Button>
+          </div>
+        </header>
+      ) : null}
 
-      <section className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+      <section className="grid gap-6 sm:grid-cols-2 xl:grid-cols-5">
         <StatCard
           title="Total Documentos"
           icon={FileText}
@@ -60,6 +68,7 @@ export function DocumentsView({ data }: { data: DocumentsData }) {
         <StatCard title="Planos" icon={ImageIcon} value={data.stats.plans} description="Arquitectónicos y técnicos" />
         <StatCard title="Certificados" icon={File} value={data.stats.certificates} description="Todos vigentes" />
         <StatCard title="Garantías" icon={FileSpreadsheet} value={data.stats.warranties} description="Materiales y trabajos" />
+        <StatCard title="Presupuestos" icon={FileText} value={data.stats.budgets} description="Adjuntos a pagos" />
       </section>
 
       <Card className="border-[#e8e6e0]">
@@ -83,11 +92,37 @@ export function DocumentsView({ data }: { data: DocumentsData }) {
       </Card>
 
       <Tabs defaultValue="all" className="space-y-6">
-        <TabsList className="border border-[#e8e6e0] bg-white">
-          <TabsTrigger value="all">Todos</TabsTrigger>
-          <TabsTrigger value="plans">Planos</TabsTrigger>
-          <TabsTrigger value="certificates">Certificados</TabsTrigger>
-          <TabsTrigger value="legal">Legal</TabsTrigger>
+        <TabsList className="flex flex-wrap items-center gap-2 rounded-full border border-[#E8E6E0] bg-white p-1 shadow-sm">
+          <TabsTrigger
+            value="all"
+            className="rounded-full px-4 py-2 text-sm font-medium text-[#4B5563] transition-colors data-[state=active]:bg-[#2F4F4F] data-[state=active]:text-white"
+          >
+            Todos
+          </TabsTrigger>
+          <TabsTrigger
+            value="plans"
+            className="rounded-full px-4 py-2 text-sm font-medium text-[#4B5563] transition-colors data-[state=active]:bg-[#2F4F4F] data-[state=active]:text-white"
+          >
+            Planos
+          </TabsTrigger>
+          <TabsTrigger
+            value="certificates"
+            className="rounded-full px-4 py-2 text-sm font-medium text-[#4B5563] transition-colors data-[state=active]:bg-[#2F4F4F] data-[state=active]:text-white"
+          >
+            Certificados
+          </TabsTrigger>
+          <TabsTrigger
+            value="legal"
+            className="rounded-full px-4 py-2 text-sm font-medium text-[#4B5563] transition-colors data-[state=active]:bg-[#2F4F4F] data-[state=active]:text-white"
+          >
+            Legal
+          </TabsTrigger>
+          <TabsTrigger
+            value="budgets"
+            className="rounded-full px-4 py-2 text-sm font-medium text-[#4B5563] transition-colors data-[state=active]:bg-[#2F4F4F] data-[state=active]:text-white"
+          >
+            Presupuestos
+          </TabsTrigger>
         </TabsList>
 
         <DocumentTab id="all" title="Todos los documentos" description="Listado completo" documents={filteredDocuments} />
@@ -111,6 +146,13 @@ export function DocumentsView({ data }: { data: DocumentsData }) {
           description="Permisos y documentación legal"
           documents={legalDocuments}
           emptyMessage="No hay documentos legales registrados."
+        />
+        <DocumentTab
+          id="budgets"
+          title="Presupuestos"
+          description="Presupuestos y propuestas económicas adjuntas"
+          documents={budgetDocuments}
+          emptyMessage="No se han registrado presupuestos."
         />
       </Tabs>
     </div>
@@ -176,25 +218,73 @@ function DocumentTab({
 }
 
 function DocumentRow({ doc }: { doc: DocumentsData["documents"][number] }) {
+  const fileLabel = formatFileLabel(doc)
+  const updatedLabel = formatUpdatedAt(doc.uploadedAt)
+
   return (
-    <div className="flex items-center justify-between gap-4 rounded-lg border border-[#e8e6e0] p-4">
-      <div className="space-y-1">
-        <div className="flex items-center gap-2">
-          <Badge className="bg-[#2f4f4f] text-white">{doc.fileType}</Badge>
-          <span className="text-sm font-medium text-[#2f4f4f]">{doc.name}</span>
+    <div className="rounded-[1.25rem] border border-[#E8E6E0] bg-white/80 p-6 shadow-[0_10px_30px_rgba(47,79,79,0.05)] transition-colors">
+      <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge className="rounded-full border-[#E8E6E0] bg-[#F8F7F4] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.3em] text-[#C6B89E]">
+              {doc.category}
+            </Badge>
+            <Badge className="rounded-full border-transparent bg-[#2F4F4F] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-white">
+              {fileLabel}
+            </Badge>
+          </div>
+          <h3 className="font-heading text-lg text-[#2F4F4F] sm:text-xl">{doc.name}</h3>
+          <div className="flex flex-wrap items-center gap-3 text-xs text-[#6B7280]">
+            <span>{doc.sizeLabel ?? "Tamaño no disponible"}</span>
+            <span className="hidden text-[#D6D2C4] sm:inline">•</span>
+            <span>{updatedLabel}</span>
+          </div>
         </div>
-        <p className="text-xs text-[#6b7280]">{doc.category}</p>
-        <p className="text-xs text-[#9ca3af]">Actualizado el {formatDate(doc.uploadedAt)}</p>
-      </div>
-      <div className="flex items-center gap-4 text-sm text-[#6b7280]">
-        <span>{doc.sizeLabel ?? "—"}</span>
-        <Badge className={statusBadgeClass(doc.status)}>{formatStatus(doc.status)}</Badge>
-        <Button variant="ghost" size="icon" className="text-[#2f4f4f] hover:bg-[#f4f1ea]">
-          <Eye className="h-4 w-4" />
-        </Button>
-        <Button variant="ghost" size="icon" className="text-[#2f4f4f] hover:bg-[#f4f1ea]">
-          <Download className="h-4 w-4" />
-        </Button>
+        <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:gap-4">
+          <Badge className={`rounded-full border-transparent px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] ${statusBadgeClass(doc.status)}`}>
+            {formatStatus(doc.status)}
+          </Badge>
+          <div className="flex items-center gap-2">
+            {doc.viewUrl ? (
+              <Button
+                asChild
+                variant="ghost"
+                size="icon"
+                aria-label={`Ver ${doc.name}`}
+                className="text-[#2F4F4F] hover:bg-[#F4F1EA] disabled:text-[#C5C9D1]"
+              >
+                <a href={doc.viewUrl} target="_blank" rel="noopener noreferrer">
+                  <Eye className="h-4 w-4" />
+                  <span className="sr-only">{`Ver ${doc.name}`}</span>
+                </a>
+              </Button>
+            ) : (
+              <Button variant="ghost" size="icon" disabled className="text-[#C5C9D1]">
+                <Eye className="h-4 w-4" />
+                <span className="sr-only">{`Ver ${doc.name}`}</span>
+              </Button>
+            )}
+            {doc.downloadUrl ? (
+              <Button
+                asChild
+                variant="ghost"
+                size="icon"
+                aria-label={`Descargar ${doc.name}`}
+                className="text-[#2F4F4F] hover:bg-[#F4F1EA] disabled:text-[#C5C9D1]"
+              >
+                <a href={doc.downloadUrl} download={doc.name}>
+                  <Download className="h-4 w-4" />
+                  <span className="sr-only">{`Descargar ${doc.name}`}</span>
+                </a>
+              </Button>
+            ) : (
+              <Button variant="ghost" size="icon" disabled className="text-[#C5C9D1]">
+                <Download className="h-4 w-4" />
+                <span className="sr-only">{`Descargar ${doc.name}`}</span>
+              </Button>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   )
@@ -203,6 +293,12 @@ function DocumentRow({ doc }: { doc: DocumentsData["documents"][number] }) {
 function formatDate(value: string | null): string {
   if (!value) return "Sin fecha"
   return new Intl.DateTimeFormat("es-ES", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(value))
+}
+
+function formatUpdatedAt(value: string | null): string {
+  const formatted = formatDate(value)
+  if (formatted === "Sin fecha") return "Actualización pendiente"
+  return `Actualizado el ${formatted}`
 }
 
 function formatStatus(status: DocumentsData["documents"][number]["status"]): string {
@@ -220,5 +316,41 @@ function statusBadgeClass(status: DocumentsData["documents"][number]["status"]):
       return `bg-orange-500/10 text-orange-700 ${base}`
     default:
       return `bg-gray-500/10 text-gray-700 ${base}`
+  }
+}
+
+function formatFileLabel(doc: DocumentsData["documents"][number]): string {
+  const extension = doc.name.split(".").pop()
+  if (extension && extension.length <= 4) {
+    return extension.toUpperCase()
+  }
+
+  return formatMimeLabel(doc.fileType)
+}
+
+function formatMimeLabel(fileType: string): string {
+  if (!fileType) return "ARCHIVO"
+  const clean = fileType.split("/").pop() ?? fileType
+
+  switch (clean) {
+    case "pdf":
+      return "PDF"
+    case "jpeg":
+    case "jpg":
+      return "JPG"
+    case "png":
+      return "PNG"
+    case "msword":
+      return "DOC"
+    case "vnd.ms-excel":
+      return "XLS"
+    case "vnd.openxmlformats-officedocument.spreadsheetml.sheet":
+      return "XLSX"
+    case "vnd.openxmlformats-officedocument.wordprocessingml.document":
+      return "DOCX"
+    case "zip":
+      return "ZIP"
+    default:
+      return clean.replace(/[\.\-_]/g, " ").toUpperCase()
   }
 }

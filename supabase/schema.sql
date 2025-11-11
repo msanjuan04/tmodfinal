@@ -7,6 +7,7 @@
 
 -- Deshabilitar RLS temporalmente para limpieza
 alter table if exists public.project_messages disable row level security;
+alter table if exists public.project_payments disable row level security;
 alter table if exists public.project_conversations disable row level security;
 alter table if exists public.project_photos_summary disable row level security;
 alter table if exists public.project_events disable row level security;
@@ -26,6 +27,7 @@ alter table if exists public.app_users disable row level security;
 
 -- Eliminar datos existentes (en orden correcto por foreign keys)
 delete from public.project_messages;
+delete from public.project_payments;
 delete from public.project_conversations;
 delete from public.project_photos_summary;
 delete from public.project_events;
@@ -45,6 +47,7 @@ delete from public.app_users;
 
 -- Eliminar tablas existentes
 drop table if exists public.project_messages cascade;
+drop table if exists public.project_payments cascade;
 drop table if exists public.project_conversations cascade;
 drop table if exists public.project_photos_summary cascade;
 drop table if exists public.project_events cascade;
@@ -69,6 +72,7 @@ drop type if exists public.activity_status cascade;
 drop type if exists public.phase_status cascade;
 drop type if exists public.milestone_status cascade;
 drop type if exists public.update_type cascade;
+drop type if exists public.payment_status cascade;
 
 -- ============================================================================
 -- BLOCK 2: SCHEMA COMPLETO - Ejecutar después del bloque de limpieza
@@ -86,6 +90,7 @@ create table public.clients (
   id uuid primary key default uuid_generate_v4(),
   full_name text not null,
   email text not null unique,
+  stripe_customer_id text unique,
   phone text,
   client_type text,
   company text,
@@ -102,6 +107,7 @@ create table public.clients (
 );
 create index clients_status_idx on public.clients(status);
 create index clients_created_at_idx on public.clients(created_at desc);
+create index clients_stripe_customer_idx on public.clients(stripe_customer_id);
 
 -- Tabla de usuarios de la aplicación con autenticación
 create table public.app_users (
@@ -180,6 +186,8 @@ create table public.projects (
 );
 
 create type public.update_type as enum ('success', 'info', 'warning', 'message');
+
+create type public.payment_status as enum ('draft', 'pending', 'paid', 'failed', 'canceled');
 
 create table public.project_updates (
   id uuid primary key default uuid_generate_v4(),
@@ -419,6 +427,37 @@ create table public.project_task_activity (
 );
 create index project_task_activity_task_id_idx on public.project_task_activity(task_id, created_at desc);
 
+create table public.project_payments (
+  id uuid primary key default uuid_generate_v4(),
+  project_id uuid not null references public.projects(id) on delete cascade,
+  client_id uuid not null references public.clients(id) on delete cascade,
+  concept text not null,
+  description text,
+  amount_cents bigint not null check (amount_cents > 0),
+  currency text not null default 'EUR' check (char_length(currency) = 3),
+  status public.payment_status not null default 'draft',
+  due_date date,
+  stripe_payment_intent_id text,
+  stripe_checkout_session_id text,
+  stripe_customer_id text,
+  stripe_invoice_id text,
+  payment_link text,
+  proposal_document_id uuid references public.project_documents(id) on delete set null,
+  created_by uuid references public.app_users(id) on delete set null,
+  sent_at timestamptz,
+  paid_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  metadata jsonb not null default '{}'::jsonb
+);
+create index project_payments_project_id_idx on public.project_payments(project_id, created_at desc);
+create index project_payments_client_id_idx on public.project_payments(client_id, created_at desc);
+create index project_payments_status_idx on public.project_payments(status, created_at desc);
+create index project_payments_due_date_idx on public.project_payments(due_date);
+create index project_payments_checkout_idx on public.project_payments(stripe_checkout_session_id);
+create index project_payments_payment_intent_idx on public.project_payments(stripe_payment_intent_id);
+create index project_payments_document_idx on public.project_payments(proposal_document_id);
+
 -- Enable RLS (service role used by Next.js server bypasses policies)
 alter table public.app_users enable row level security;
 alter table public.clients enable row level security;
@@ -440,6 +479,7 @@ alter table public.project_conversations enable row level security;
 alter table public.project_messages enable row level security;
 alter table public.project_tasks enable row level security;
 alter table public.project_task_activity enable row level security;
+alter table public.project_payments enable row level security;
 alter table public.client_notes enable row level security;
 alter table public.client_activity enable row level security;
 
@@ -551,6 +591,18 @@ create policy service_role_full_access_project_task_activity
 
 create policy admin_email_full_access_project_task_activity
   on public.project_task_activity
+  for all
+  using (lower(coalesce(current_setting('request.jwt.claims', true), '{}')::json ->> 'email') = 'aterrazea@gmail.com')
+  with check (lower(coalesce(current_setting('request.jwt.claims', true), '{}')::json ->> 'email') = 'aterrazea@gmail.com');
+
+create policy service_role_full_access_project_payments
+  on public.project_payments
+  for all
+  using (auth.role() = 'service_role')
+  with check (auth.role() = 'service_role');
+
+create policy admin_email_full_access_project_payments
+  on public.project_payments
   for all
   using (lower(coalesce(current_setting('request.jwt.claims', true), '{}')::json ->> 'email') = 'aterrazea@gmail.com')
   with check (lower(coalesce(current_setting('request.jwt.claims', true), '{}')::json ->> 'email') = 'aterrazea@gmail.com');

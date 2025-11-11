@@ -40,7 +40,7 @@ export default async function PaymentsPage({ searchParams }: PaymentsPageProps) 
           </CardDescription>
         </CardHeader>
       </Card>
-      <PaymentsView />
+      <PaymentsView projectSlug={activeProject.slug} />
     </div>
   )
 }

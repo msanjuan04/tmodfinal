@@ -24,6 +24,8 @@ const envSchema = z.object({
   SESSION_COOKIE_SAME_SITE: z.enum(["lax", "strict", "none"]).optional(),
   SESSION_COOKIE_DOMAIN: z.string().optional(),
   SESSION_COOKIE_SECURE: z.coerce.boolean().optional(),
+  STRIPE_SECRET_KEY: z.string().min(10, "STRIPE_SECRET_KEY must be provided"),
+  STRIPE_WEBHOOK_SECRET: z.string().min(10, "STRIPE_WEBHOOK_SECRET must be provided"),
 })
 
 const parsed = envSchema.safeParse({
@@ -37,6 +39,8 @@ const parsed = envSchema.safeParse({
   SESSION_COOKIE_SAME_SITE: process.env.SESSION_COOKIE_SAME_SITE,
   SESSION_COOKIE_DOMAIN: process.env.SESSION_COOKIE_DOMAIN,
   SESSION_COOKIE_SECURE: process.env.SESSION_COOKIE_SECURE,
+  STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY,
+  STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET,
 })
 
 if (!parsed.success) {
@@ -70,6 +74,8 @@ export const env = {
   supabaseUrl: normalizedSupabaseUrl,
   supabaseServiceRoleKey: parsed.data.SUPABASE_SERVICE_ROLE_KEY,
   sessionSecret: parsed.data.SESSION_SECRET,
+  stripeSecretKey: parsed.data.STRIPE_SECRET_KEY,
+  stripeWebhookSecret: parsed.data.STRIPE_WEBHOOK_SECRET,
   clientAppUrl: parsed.data.CLIENT_APP_URL,
   clientAppOrigin: clientUrl.origin,
   sessionCookie: {

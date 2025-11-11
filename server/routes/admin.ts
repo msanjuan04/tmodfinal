@@ -1,8 +1,10 @@
 import { Buffer } from "node:buffer"
 import { Router } from "express"
 import { z } from "zod"
+import type { SupabaseClient } from "@supabase/supabase-js"
 
 import { getAdminClientsOverview } from "../../lib/supabase/admin-data"
+import { createClientDocumentRecord } from "../../lib/supabase/admin-clients"
 import { getAdminDashboardData } from "../../lib/supabase/admin-dashboard"
 import {
   createProjectEvent,
@@ -25,7 +27,10 @@ import {
   recalculateProjectProgress,
 } from "../../lib/supabase/project-tasks"
 import { createServerSupabaseClient } from "../../lib/supabase/server"
-import { getDocuments } from "../../lib/supabase/queries"
+import { getDocuments, getMessages, ensureProjectConversation, sendTeamMemberConversationMessage } from "../../lib/supabase/queries"
+import type { ListProjectTasksFilters, ListProjectTasksResult, ProjectTask } from "../../lib/supabase/project-tasks"
+import type { ProjectTaskStatus } from "../../types/project-tasks"
+import { addDays, isToday, isWithinInterval, startOfDay } from "date-fns"
 import { createAdminTeamMember, listAdminTeamMembers } from "../../lib/supabase/admin-team"
 import {
   PROJECT_TEAM_ROLES,
@@ -57,6 +62,9 @@ import {
 import { requireAdminSession } from "../services/session"
 import { asyncHandler } from "../utils/async-handler"
 import { isProjectTaskStatus } from "../../types/project-tasks"
+import { createProjectPayment, getAdminPaymentById, listAdminPayments } from "../../lib/supabase/admin-payments"
+import { ensureStripeCustomer, createCheckoutSessionForPayment } from "../../lib/payments/stripe"
+import { env } from "../config/env"
 
 type ProjectTeamRole = (typeof PROJECT_TEAM_ROLES)[number]
 
@@ -134,12 +142,93 @@ const assignmentsSchema = z.object({
   assignments: z.record(z.string(), z.string().uuid().nullable()),
 })
 
+const createConversationSchema = z.object({
+  projectSlug: z.string().min(1).max(160).transform((value) => value.trim()),
+  teamMemberId: z.string().uuid(),
+})
+
+const sendConversationMessageSchema = z.object({
+  content: z
+    .string()
+    .max(4000)
+    .transform((value) => value.trim())
+    .refine((value) => value.length > 0, { message: "El mensaje no puede estar vacío" }),
+})
+
 const optionalDate = z
   .string()
   .optional()
   .transform((value) => (typeof value === "string" && value.length > 0 ? value : null))
 
+const attachmentSchema = z.object({
+  name: z.string().min(3).max(160),
+  fileType: z
+    .string()
+    .min(5)
+    .transform((value) => value.trim())
+    .refine((value) => value.toLowerCase().includes("pdf"), { message: "El archivo debe ser un PDF" }),
+  sizeLabel: z.string().max(120).optional(),
+  content: z.string().min(20),
+})
+
+const amountSchema = z
+  .union([z.number(), z.string()])
+  .transform((value) => {
+    if (typeof value === "number") return value
+    const normalized = value.replace(",", ".")
+    return Number(normalized)
+  })
+  .refine((value) => Number.isFinite(value) && value > 0, { message: "El importe debe ser mayor a cero" })
+
+const createPaymentSchema = z.object({
+  projectId: z.string().uuid(),
+  concept: z
+    .string()
+    .min(3)
+    .max(160)
+    .transform((value) => value.trim()),
+  description: z
+    .string()
+    .max(1000)
+    .optional()
+    .transform((value) => (value && value.trim().length > 0 ? value.trim() : null)),
+  amount: amountSchema,
+  currency: z
+    .string()
+    .optional()
+    .transform((value) => {
+      if (!value) return "EUR"
+      const trimmed = value.trim()
+      return trimmed.length > 0 ? trimmed.toUpperCase() : "EUR"
+    }),
+  dueDate: optionalDate,
+  attachment: attachmentSchema.optional(),
+})
+
 const STORAGE_BUCKET = "project-assets"
+
+async function ensureStorageBucketExists(supabase: SupabaseClient) {
+  const { data: bucket, error } = await supabase.storage.getBucket(STORAGE_BUCKET)
+  if (bucket) {
+    if (!bucket.public) {
+      const { error: updateError } = await supabase.storage.updateBucket(STORAGE_BUCKET, { public: true })
+      if (updateError) throw updateError
+    }
+    return
+  }
+
+  if (error && !String(error.message ?? error).toLowerCase().includes("not found")) {
+    throw error
+  }
+
+  const { error: createError } = await supabase.storage.createBucket(STORAGE_BUCKET, {
+    public: true,
+  })
+
+  if (createError && !String(createError.message ?? createError).toLowerCase().includes("exists")) {
+    throw createError
+  }
+}
 
 function slugifyName(value: string) {
   return value
@@ -153,6 +242,7 @@ function slugifyName(value: string) {
 
 async function uploadProjectAsset(projectId: string, type: "documents" | "photos", fileName: string, base64Content: string, contentType: string) {
   const supabase = createServerSupabaseClient()
+  await ensureStorageBucketExists(supabase)
   const base64 = base64Content.includes(",") ? base64Content.split(",").pop() ?? base64Content : base64Content
   const buffer = Buffer.from(base64, "base64")
   const safeName = slugifyName(fileName || `${Date.now()}`)
@@ -213,8 +303,9 @@ const documentUploadSchema = z.object({
   sizeLabel: z.string().optional(),
   notifyClient: z.boolean().optional(),
   tags: z.array(z.string()).optional(),
-  notes: z.string().optional(),
+  notes: z.string().nullable().optional(),
   uploadedBy: z.string().uuid().optional(),
+  clientIds: z.array(z.string().min(1)).optional(),
   fileContent: z.string().min(10),
 })
 
@@ -226,7 +317,7 @@ const documentUpdateSchema = z.object({
   notifyClient: z.boolean().optional(),
   tags: z.array(z.string()).optional(),
   status: z.string().optional(),
-  notes: z.string().optional(),
+  notes: z.string().nullable().optional(),
 })
 
 const photoUploadSchema = z.object({
@@ -390,6 +481,74 @@ router.get(
 )
 
 router.get(
+  "/messages",
+  asyncHandler(async (request, response) => {
+    requireAdminSession(request)
+    const slug = typeof request.query.project === "string" ? request.query.project : undefined
+    const data = await getMessages(slug)
+    response.json(data)
+  }),
+)
+
+router.post(
+  "/messages",
+  asyncHandler(async (request, response) => {
+    requireAdminSession(request)
+    const parsed = createConversationSchema.safeParse(request.body)
+
+    if (!parsed.success) {
+      response.status(400).json({
+        message: "Datos de conversación inválidos",
+        errors: parsed.error.flatten().fieldErrors,
+      })
+      return
+    }
+
+    try {
+      const conversationId = await ensureProjectConversation(parsed.data.projectSlug, parsed.data.teamMemberId)
+      response.status(201).json({ conversationId })
+    } catch (error) {
+      console.error("Error creating conversation", error)
+      response.status(500).json({ message: "No se pudo crear la conversación." })
+    }
+  }),
+)
+
+router.post(
+  "/messages/:conversationId/messages",
+  asyncHandler(async (request, response) => {
+    requireAdminSession(request)
+    const parsed = sendConversationMessageSchema.safeParse(request.body)
+
+    if (!parsed.success) {
+      response.status(400).json({
+        message: "Mensaje inválido",
+        errors: parsed.error.flatten().fieldErrors,
+      })
+      return
+    }
+
+    try {
+      const conversationId = request.params.conversationId
+      if (!conversationId) {
+        response.status(400).json({ message: "Conversación no especificada." })
+        return
+      }
+
+      await sendTeamMemberConversationMessage(conversationId, parsed.data.content)
+      response.status(201).json({ success: true })
+    } catch (error) {
+      const status = (error as Error & { status?: number }).status ?? 500
+      if (status >= 400 && status < 500) {
+        response.status(status).json({ message: (error as Error).message })
+        return
+      }
+      throw error
+    }
+  }),
+)
+
+router.get(
   "/clients",
   asyncHandler(async (_request, response) => {
     const clients = await getAdminClientsOverview()
@@ -492,6 +651,164 @@ router.post(
     }
 
     response.status(201).json({ client: data })
+  }),
+)
+
+router.get(
+  "/payments",
+  asyncHandler(async (request, response) => {
+    requireAdminSession(request)
+    const result = await listAdminPayments()
+    response.json(result)
+  }),
+)
+
+router.post(
+  "/payments",
+  asyncHandler(async (request, response) => {
+    const session = requireAdminSession(request)
+    const parsed = createPaymentSchema.safeParse(request.body)
+
+    if (!parsed.success) {
+      response.status(400).json({ message: "Datos de pago inválidos", errors: parsed.error.flatten().fieldErrors })
+      return
+    }
+
+    const { projectId, concept, description, amount, currency, dueDate, attachment } = parsed.data
+    const amountCents = Math.round(amount * 100)
+    let proposalDocumentId: string | null = null
+
+    if (attachment) {
+      try {
+        const upload = await uploadProjectAsset(projectId, "documents", attachment.name, attachment.content, attachment.fileType)
+        proposalDocumentId = await createProjectDocument(projectId, {
+          name: attachment.name,
+          category: "Presupuestos",
+          fileType: attachment.fileType,
+          sizeLabel: attachment.sizeLabel ?? null,
+          storagePath: upload.storagePath,
+          notifyClient: false,
+          tags: ["presupuesto", "pagos"],
+          notes: description ?? null,
+          uploadedBy: session.userId,
+        })
+      } catch (error) {
+        console.error("Error al guardar el presupuesto adjunto", error)
+        response.status(500).json({ message: "No se pudo guardar el PDF adjunto. Inténtalo de nuevo." })
+        return
+      }
+    }
+
+    try {
+      const payment = await createProjectPayment({
+        projectId,
+        concept,
+        description,
+        amountCents,
+        currency,
+        dueDate,
+        createdBy: session.userId,
+        proposalDocumentId,
+      })
+      response.status(201).json({ payment })
+    } catch (error) {
+      if (isMissingRelationError(error, "project_payments")) {
+        response.status(500).json({ message: SCHEMA_HINT })
+        return
+      }
+      throw error
+    }
+  }),
+)
+
+router.post(
+  "/payments/:paymentId/send",
+  asyncHandler(async (request, response) => {
+    requireAdminSession(request)
+    const paymentId = request.params.paymentId
+    if (!paymentId) {
+      response.status(400).json({ message: "Pago no especificado" })
+      return
+    }
+
+    const payment = await getAdminPaymentById(paymentId)
+    if (!payment) {
+      response.status(404).json({ message: "Pago no encontrado" })
+      return
+    }
+
+    if (payment.status !== "draft") {
+      response.status(400).json({ message: "Solo puedes enviar pagos en estado borrador." })
+      return
+    }
+
+    const supabase = createServerSupabaseClient()
+    const { data: client, error: clientError } = await supabase
+      .from("clients")
+      .select("id, full_name, email, stripe_customer_id")
+      .eq("id", payment.clientId)
+      .maybeSingle()
+
+    if (clientError) {
+      if (isMissingRelationError(clientError, "clients")) {
+        response.status(500).json({ message: SCHEMA_HINT })
+        return
+      }
+      throw clientError
+    }
+
+    if (!client) {
+      response.status(404).json({ message: "Cliente asociado no encontrado." })
+      return
+    }
+
+    if (!client.email) {
+      response.status(400).json({ message: "El cliente no tiene un correo electrónico configurado para Stripe." })
+      return
+    }
+
+    const stripeCustomerId = await ensureStripeCustomer({
+      id: client.id,
+      fullName: client.full_name ?? payment.clientName ?? "Cliente Terrazea",
+      email: client.email,
+      stripeCustomerId: client.stripe_customer_id ?? payment.clientStripeCustomerId ?? payment.stripeCustomerId ?? null,
+    })
+
+    const clientAppBase = env.clientAppUrl.replace(/\/$/, "")
+    const checkoutSession = await createCheckoutSessionForPayment({
+      payment,
+      customerId: stripeCustomerId,
+      successUrl: `${clientAppBase}/client/payments?status=success`,
+      cancelUrl: `${clientAppBase}/client/payments?status=cancel`,
+    })
+
+    const paymentIntentId =
+      typeof checkoutSession.payment_intent === "string"
+        ? checkoutSession.payment_intent
+        : checkoutSession.payment_intent?.id ?? null
+
+    const invoiceId = typeof checkoutSession.invoice === "string" ? checkoutSession.invoice : null
+
+    const { error: updateError } = await supabase
+      .from("project_payments")
+      .update({
+        status: "pending",
+        sent_at: new Date().toISOString(),
+        payment_link: checkoutSession.url,
+        stripe_payment_intent_id: paymentIntentId,
+        stripe_invoice_id: invoiceId,
+        stripe_customer_id: stripeCustomerId,
+        stripe_checkout_session_id: checkoutSession.id,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", payment.id)
+
+    if (updateError) {
+      throw updateError
+    }
+
+    const updated = await getAdminPaymentById(payment.id)
+    response.json({ payment: updated })
   }),
 )
 
@@ -849,26 +1166,51 @@ router.post(
     const { projectId } = request.params
     const parsed = documentUploadSchema.safeParse(request.body)
     if (!parsed.success) {
+      console.warn("Documento inválido", parsed.error.flatten().fieldErrors)
       response.status(400).json({ message: "Datos de documento inválidos", errors: parsed.error.flatten().fieldErrors })
       return
     }
 
     const upload = await uploadProjectAsset(projectId, "documents", parsed.data.name, parsed.data.fileContent, parsed.data.fileType)
+    const clientIds = parsed.data.clientIds ?? []
+    const notifyClient = parsed.data.notifyClient ?? clientIds.length > 0
+    const tags = parsed.data.tags ?? []
+    const uploaderId = parsed.data.uploadedBy ?? null
     const id = await createProjectDocument(projectId, {
       name: parsed.data.name,
       category: parsed.data.category,
       fileType: parsed.data.fileType,
       sizeLabel: parsed.data.sizeLabel ?? null,
       storagePath: upload.storagePath,
-      notifyClient: parsed.data.notifyClient ?? false,
-      tags: parsed.data.tags ?? [],
+      notifyClient,
+      tags,
       notes: parsed.data.notes ?? null,
-      uploadedBy: parsed.data.uploadedBy ?? session.userId,
+      uploadedBy: uploaderId,
     })
+
+    if (clientIds.length > 0) {
+      await Promise.all(
+        clientIds.map((clientId) =>
+          createClientDocumentRecord(clientId, {
+            name: parsed.data.name,
+            category: parsed.data.category,
+            fileType: parsed.data.fileType,
+            sizeLabel: parsed.data.sizeLabel ?? null,
+            storagePath: upload.storagePath,
+            url: upload.publicUrl,
+            projectId,
+            tags,
+            notes: parsed.data.notes ?? null,
+            notifyClient: true,
+            uploadedBy: uploaderId,
+          }),
+        ),
+      )
+    }
 
     await recordProjectTimelineEvent(projectId, {
       title: `Nuevo documento: ${parsed.data.name}`,
-      eventType: "document_uploaded",
+      eventType: notifyClient ? "document_shared" : "document_uploaded",
       status: "info",
     })
 
@@ -1023,8 +1365,7 @@ router.get(
     const { search, status, assigneeId, startDateFrom, startDateTo, dueDateFrom, dueDateTo, page, pageSize } = request.query
 
     const statusList = typeof status === "string" && status.length > 0 ? status.split(",").map((item) => item.trim()) : undefined
-
-    const data = await listProjectTasks(projectId, {
+    const filters: ListProjectTasksFilters = {
       search: typeof search === "string" ? search : undefined,
       status: statusList,
       assigneeId: typeof assigneeId === "string" ? assigneeId : undefined,
@@ -1032,13 +1373,191 @@ router.get(
       startDateTo: typeof startDateTo === "string" ? startDateTo : undefined,
       dueDateFrom: typeof dueDateFrom === "string" ? dueDateFrom : undefined,
       dueDateTo: typeof dueDateTo === "string" ? dueDateTo : undefined,
-      page: typeof page === "string" ? Number(page) : undefined,
-      pageSize: typeof pageSize === "string" ? Number(pageSize) : undefined,
-    })
+      page: typeof page === "string" ? Number.parseInt(page, 10) : undefined,
+      pageSize: typeof pageSize === "string" ? Number.parseInt(pageSize, 10) : undefined,
+    }
 
-    response.json(data)
+    try {
+      const data = await listProjectTasks(projectId, filters)
+      response.json(data)
+      return
+    } catch (error) {
+      console.error("Error fetching project tasks", error)
+      if (
+        isMissingRelationError(error, "project_tasks") ||
+        isMissingRelationError(error, "team_members") ||
+        (typeof error === "object" && error !== null && "code" in error && (error as any).code === "42P01")
+      ) {
+        try {
+          const fallback = await buildFallbackTaskList(projectId, filters)
+          response.json(fallback)
+          return
+        } catch (fallbackError) {
+          console.error("Error building fallback task list", fallbackError)
+        }
+      }
+      response.status(500).json({ message: "No se pudieron obtener las tareas." })
+    }
   }),
 )
+
+function mapPhaseStatusToTaskStatus(status?: string | null): ProjectTaskStatus {
+  if (!status) return "todo"
+  const value = status.toLowerCase()
+  if (value.includes("final") || value.includes("complet") || value === "done") return "done"
+  if (value.includes("bloq")) return "blocked"
+  if (value.includes("revi") || value.includes("review")) return "review"
+  if (value.includes("curso") || value.includes("progreso") || value.includes("progress")) return "in_progress"
+  return "todo"
+}
+
+async function buildFallbackTaskList(projectId: string, filters: ListProjectTasksFilters = {}): Promise<ListProjectTasksResult> {
+  const supabase = createServerSupabaseClient()
+
+  const { data, error } = await supabase
+    .from("project_phases")
+    .select(
+      [
+        "id",
+        "name",
+        "summary",
+        "expected_start",
+        "expected_end",
+        "status",
+        "weight",
+        "sort_order",
+        "updated_at",
+        "created_at",
+      ].join(","),
+    )
+    .eq("project_id", projectId)
+    .order("sort_order", { ascending: true })
+
+  if (error) {
+    throw error
+  }
+
+  type PhaseRow = {
+    id: string
+    name: string | null
+    summary: string | null
+    expected_start: string | null
+    expected_end: string | null
+    status: string | null
+    weight: number | null
+    sort_order: number | null
+    created_at: string | null
+    updated_at: string | null
+  }
+
+  const phases = (data ?? []) as unknown as PhaseRow[]
+
+  const page = Math.max(filters.page ?? 1, 1)
+  const pageSize = Math.min(Math.max(filters.pageSize ?? 20, 5), 100)
+
+  const filterBySearch = (name?: string | null) => {
+    if (!filters.search || filters.search.trim().length === 0) return true
+    const query = filters.search.trim().toLowerCase()
+    return (name ?? "").toLowerCase().includes(query)
+  }
+
+  const filterByStatus = (status: string) => {
+    if (!filters.status || filters.status.length === 0) return true
+    return filters.status.includes(status)
+  }
+
+  const filterByDate = (value: string | null | undefined, from?: string, to?: string) => {
+    if (!value) return true
+    const dateValue = new Date(value)
+    if (Number.isNaN(dateValue.getTime())) return true
+    if (from) {
+      const fromDate = new Date(from)
+      if (!Number.isNaN(fromDate.getTime()) && dateValue < fromDate) return false
+    }
+    if (to) {
+      const toDate = new Date(to)
+      if (!Number.isNaN(toDate.getTime()) && dateValue > toDate) return false
+    }
+    return true
+  }
+
+  let tasks: ProjectTask[] = phases
+    .map((phase, index) => {
+      const status = mapPhaseStatusToTaskStatus(phase.status)
+      const weight = Number(phase.weight ?? 1)
+      const createdAt = phase.created_at ?? new Date().toISOString()
+      const updatedAt = phase.updated_at ?? createdAt
+      return {
+        id: `phase-${phase.id}`,
+        projectId,
+        title: phase.name && phase.name.trim().length > 0 ? phase.name : `Fase ${index + 1}`,
+        description: phase.summary ?? null,
+        status,
+        weight,
+        assigneeId: null,
+        assigneeName: null,
+        startDate: phase.expected_start ?? null,
+        dueDate: phase.expected_end ?? null,
+        position: Number(phase.sort_order ?? index),
+        createdAt,
+        updatedAt,
+      }
+    })
+    .filter((task) => filterBySearch(task.title))
+    .filter((task) => filterByStatus(task.status))
+    .filter((task) => filterByDate(task.startDate, filters.startDateFrom, filters.startDateTo))
+    .filter((task) => filterByDate(task.dueDate, filters.dueDateFrom, filters.dueDateTo))
+
+  if (filters.assigneeId) {
+    tasks = tasks.filter((task) => task.assigneeId === filters.assigneeId)
+  }
+
+  const total = tasks.length
+  const startIndex = (page - 1) * pageSize
+  const pagedTasks = tasks.slice(startIndex, startIndex + pageSize)
+
+  const today = startOfDay(new Date())
+  const endOfWeek = addDays(today, 7)
+
+  let totalWeight = 0
+  let completedWeight = 0
+  let dueToday = 0
+  let dueThisWeek = 0
+
+  tasks.forEach((task) => {
+    totalWeight += task.weight
+    if (task.status === "done") {
+      completedWeight += task.weight
+    }
+    if (task.dueDate) {
+      const due = new Date(task.dueDate)
+      if (!Number.isNaN(due.getTime())) {
+        if (isToday(due)) dueToday += 1
+        if (isWithinInterval(due, { start: today, end: endOfWeek })) dueThisWeek += 1
+      }
+    }
+  })
+
+  return {
+    tasks: pagedTasks,
+    pagination: {
+      page,
+      pageSize,
+      total,
+    },
+    stats: {
+      total,
+      done: tasks.filter((task) => task.status === "done").length,
+      dueToday,
+      dueThisWeek,
+    },
+    counters: {
+      completedWeight,
+      totalWeight,
+    },
+    assignees: [],
+  }
+}
 
 router.post(
   "/projects/:projectId/tasks",

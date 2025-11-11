@@ -103,7 +103,21 @@ export function ProjectCalendar({
               hasEvents: selectableDates,
             }}
             modifiersClassNames={{
-              hasEvents: "rounded-full bg-[#2F4F4F] text-white hover:bg-[#1F3535]",
+              hasEvents: "terrazea-day-has-events",
+            }}
+            modifiersStyles={{
+              today: {
+                backgroundColor: "#34d399",
+                color: "#1f2937",
+                borderRadius: "9999px",
+                fontWeight: 600,
+                border: "1px solid rgba(15, 118, 110, 0.35)",
+              },
+              selected: {
+                backgroundColor: "#0f172a",
+                color: "#f8fafc",
+                borderRadius: "9999px",
+              },
             }}
             className="terrazea-day-picker"
             showOutsideDays

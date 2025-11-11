@@ -468,3 +468,52 @@ export interface AdminProjectTimelineEvent {
   eventType: string
   actorName?: string | null
 }
+
+export type PaymentStatus = "draft" | "pending" | "paid" | "failed" | "canceled"
+
+export interface AdminPaymentRecord {
+  id: string
+  projectId: string
+  projectName: string
+  projectSlug: string | null
+  clientId: string
+  clientName: string | null
+  clientEmail: string | null
+  concept: string
+  description: string | null
+  amountCents: number
+  currency: string
+  status: PaymentStatus
+  dueDate: string | null
+  paymentLink: string | null
+  stripePaymentIntentId: string | null
+  stripeCheckoutSessionId: string | null
+  stripeCustomerId: string | null
+  clientStripeCustomerId?: string | null
+  stripeInvoiceId: string | null
+  createdBy: string | null
+  sentAt: string | null
+  paidAt: string | null
+  createdAt: string
+  updatedAt: string
+  metadata?: Record<string, unknown>
+  proposalDocumentId: string | null
+  proposalDocumentName: string | null
+  proposalDocumentUrl: string | null
+}
+
+export interface AdminPaymentsSummary {
+  totalCount: number
+  overdueCount: number
+  upcomingDueDate: string | null
+  totalDraftCents: number
+  totalPendingCents: number
+  totalPaidCents: number
+  totalsByStatus: Record<PaymentStatus, number>
+  currency: string
+}
+
+export interface AdminPaymentsResponse {
+  payments: AdminPaymentRecord[]
+  summary: AdminPaymentsSummary
+}

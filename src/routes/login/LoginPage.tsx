@@ -3,6 +3,7 @@ import { Navigate, useLocation, useSearchParams } from "react-router-dom"
 
 import { useAuth } from "@app/context/AuthContext"
 import { isSuperAdminEmail } from "@/lib/constants/admin"
+import { TERRAZEA_BRAND_ICON_URL } from "@/lib/constants/brand"
 
 import { LoginForm } from "./LoginForm"
 
@@ -53,7 +54,7 @@ export function LoginPage() {
     <div className="flex min-h-screen flex-col bg-[#F4F1EA]">
       <header className="flex items-center justify-between px-6 py-4 sm:px-10">
         <a href="/" className="flex items-center gap-3 text-[#2F4F4F]">
-          <img src="/placeholder-logo.svg" alt="Terrazea" className="h-9 w-9" />
+          <img src={TERRAZEA_BRAND_ICON_URL} alt="Terrazea" className="h-9 w-9" />
           <span className="font-heading text-lg font-semibold tracking-wide">Terrazea</span>
         </a>
         <a

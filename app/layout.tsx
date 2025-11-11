@@ -1,6 +1,7 @@
 import type React from "react"
 import { Inter, Montserrat } from "next/font/google"
 import "./globals.css"
+import { TERRAZEA_BRAND_ICON_URL } from "@/lib/constants/brand"
 
 const inter = Inter({
   subsets: ["latin"],
@@ -21,7 +22,7 @@ export const metadata = {
   description: "Descubre cómo combinamos diseño mediterráneo con tecnología de vidrio líquido para tu terraza ideal.",
   generator: "v0.app",
   icons: {
-    icon: "/placeholder-logo.png",
+    icon: TERRAZEA_BRAND_ICON_URL,
   },
   openGraph: {
     title: "Terrazea · Diseño exterior & protección liquid glass",

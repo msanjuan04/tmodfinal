@@ -9,19 +9,33 @@ import type { ProjectCalendarSummary } from "@app/types/events"
 interface AdminProjectPickerProps {
   projects: ProjectCalendarSummary[]
   activeSlug: string | null
+  allowGlobalOption?: boolean
 }
 
-export function AdminProjectPicker({ projects, activeSlug }: AdminProjectPickerProps) {
+export function AdminProjectPicker({ projects, activeSlug, allowGlobalOption = false }: AdminProjectPickerProps) {
   const searchParams = useSearchParams()
   const location = useLocation()
   const navigate = useNavigate()
 
+  const baseOptions = useMemo(
+    () =>
+      projects.map((project) => ({
+        label: project.clientName ? `${project.name} · ${project.clientName}` : project.name,
+        value: project.slug,
+      })),
+    [projects],
+  )
+
   const options = useMemo(() => {
-    return projects.map((project) => ({
-      label: project.clientName ? `${project.name} · ${project.clientName}` : project.name,
-      value: project.slug,
-    }))
-  }, [projects])
+    if (!allowGlobalOption) return baseOptions
+    return [
+      {
+        label: "Calendario global Terrazea",
+        value: "",
+      },
+      ...baseOptions,
+    ]
+  }, [allowGlobalOption, baseOptions])
 
   const handleChange: React.ChangeEventHandler<HTMLSelectElement> = (event) => {
     const slug = event.target.value
@@ -43,7 +57,10 @@ export function AdminProjectPicker({ projects, activeSlug }: AdminProjectPickerP
     )
   }
 
-  const effectiveValue = options.some((option) => option.value === activeSlug) ? activeSlug ?? "" : options[0]?.value ?? ""
+  const effectiveValueCandidate = activeSlug ?? ""
+  const effectiveValue = options.some((option) => option.value === effectiveValueCandidate)
+    ? effectiveValueCandidate
+    : options[0]?.value ?? ""
 
   return (
     <label className="flex flex-col gap-1 text-sm text-[#2F4F4F]">

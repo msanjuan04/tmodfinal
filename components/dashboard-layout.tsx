@@ -22,6 +22,7 @@ import {
   Building2,
   CalendarDays,
   ChevronRight,
+  CreditCard,
   FileText,
   FolderKanban,
   LayoutDashboard,
@@ -32,12 +33,14 @@ import {
   UserCog,
   Users,
 } from "lucide-react"
+import { TerrazeaBrand } from "@/components/terrazea-brand"
 
 const navigation = [
   { name: "Resumen", href: "/dashboard", icon: LayoutDashboard },
   { name: "Calendario", href: "/dashboard/calendar", icon: CalendarDays },
   { name: "Proyectos", href: "/dashboard/projects", icon: FolderKanban },
   { name: "Clientes", href: "/dashboard/clients", icon: Users },
+  { name: "Pagos", href: "/dashboard/payments", icon: CreditCard },
   { name: "Equipo", href: "/dashboard/team", icon: UserCog },
   { name: "Documentos", href: "/dashboard/documents", icon: FileText },
   { name: "Mensajes", href: "/dashboard/messages", icon: MessageSquare },
@@ -50,6 +53,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const isAdmin = session?.role === "admin" || (session?.email ? isSuperAdminEmail(session.email) : false)
   const sessionEmail = session?.email
   const safeEmail = sessionEmail ? (isSuperAdminEmail(sessionEmail) ? SUPER_ADMIN_PRIMARY_EMAIL : sessionEmail) : SUPER_ADMIN_PRIMARY_EMAIL
+  const portalSubtitle = isAdmin ? "Portal Admin" : "Portal Cliente"
 
   return (
     <div className="min-h-screen bg-[#f4f1ea]">
@@ -57,14 +61,8 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
       <aside className="fixed inset-y-0 left-0 z-50 hidden w-64 border-r border-[#e8e6e0] bg-white lg:block">
         <div className="flex h-full flex-col">
           {/* Logo */}
-          <div className="flex h-16 items-center gap-3 border-b border-[#e8e6e0] px-6">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#2f4f4f]">
-              <Building2 className="h-6 w-6 text-white" />
-            </div>
-            <div>
-              <h1 className="font-serif text-lg font-semibold text-[#2f4f4f]">Terrazea</h1>
-              <p className="text-xs text-[#6b7280]">{isAdmin ? "Portal Admin" : "Portal Cliente"}</p>
-            </div>
+          <div className="flex h-16 items-center border-b border-[#e8e6e0] px-6">
+            <TerrazeaBrand subtitle={portalSubtitle} />
           </div>
 
           {/* Navigation */}
@@ -137,14 +135,8 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
           <SheetContent side="left" className="w-64 p-0">
             <div className="flex h-full flex-col">
               {/* Logo */}
-              <div className="flex h-16 items-center gap-3 border-b border-[#e8e6e0] px-6">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#2f4f4f]">
-                  <Building2 className="h-6 w-6 text-white" />
-                </div>
-                <div>
-              <h1 className="font-serif text-lg font-semibold text-[#2f4f4f]">Terrazea</h1>
-              <p className="text-xs text-[#6b7280]">{isAdmin ? "Portal Admin" : "Portal Cliente"}</p>
-            </div>
+              <div className="flex h-16 items-center border-b border-[#e8e6e0] px-6">
+                <TerrazeaBrand subtitle={portalSubtitle} />
               </div>
 
               {/* Navigation */}
@@ -171,12 +163,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
           </SheetContent>
         </Sheet>
 
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#2f4f4f]">
-            <Building2 className="h-6 w-6 text-white" />
-          </div>
-          <h1 className="font-serif text-lg font-semibold text-[#2f4f4f]">Terrazea</h1>
-        </div>
+        <TerrazeaBrand subtitle={portalSubtitle} collapseSubtitleOnMobile />
 
         <div className="ml-auto flex items-center gap-2">
           <Button variant="ghost" size="icon" className="relative">

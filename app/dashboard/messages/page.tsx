@@ -9,7 +9,7 @@ export default async function MessagesPage() {
 
   return (
     <DashboardLayout>
-      <MessagesView data={messagesData} />
+      <MessagesView data={messagesData} viewerType="team_member" />
     </DashboardLayout>
   )
 }

@@ -3,6 +3,7 @@ import Link from "next/link"
 import { redirect } from "next/navigation"
 
 import { getSession } from "@/lib/auth/session"
+import { TERRAZEA_BRAND_ICON_URL } from "@/lib/constants/brand"
 import { LoginForm } from "./login-form"
 
 export default async function LoginPage({ searchParams }: { searchParams: Promise<{ redirect?: string; reason?: string }> }) {
@@ -20,7 +21,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
     <div className="flex min-h-screen flex-col bg-[#F4F1EA]">
       <header className="flex items-center justify-between px-6 py-4 sm:px-10">
         <Link href="/" className="flex items-center gap-3 text-[#2F4F4F]">
-          <Image src="/placeholder-logo.svg" alt="Terrazea" width={36} height={36} className="h-9 w-9" />
+          <Image src={TERRAZEA_BRAND_ICON_URL} alt="Terrazea" width={36} height={36} className="h-9 w-9" />
           <span className="font-heading text-lg font-semibold tracking-wide">Terrazea</span>
         </Link>
         <Link

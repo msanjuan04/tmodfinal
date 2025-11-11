@@ -17,8 +17,10 @@ import { AdminClientsPage } from "./routes/admin/Clients"
 import { AdminProjectsPage } from "./routes/admin/Projects"
 import { AdminDocumentsPage } from "./routes/admin/Documents"
 import { AdminTeamPage } from "./routes/admin/Team"
+import { AdminMessagesPage } from "./routes/admin/Messages"
 import { LandingPage } from "./routes/home/LandingPage"
 import { AdminProjectPage } from "./routes/admin/ProjectPage"
+import { AdminPaymentsPage } from "./routes/admin/Payments"
 
 export default function App() {
   return (
@@ -56,7 +58,9 @@ export default function App() {
         <Route path="team" element={<AdminTeamPage />} />
         <Route path="projects/:projectSlug" element={<AdminProjectPage />} />
         <Route path="projects" element={<AdminProjectsPage />} />
+        <Route path="payments" element={<AdminPaymentsPage />} />
         <Route path="documents" element={<AdminDocumentsPage />} />
+        <Route path="messages" element={<AdminMessagesPage />} />
       </Route>
       <Route path="/admin/projects/:projectRef" element={<LegacyAdminProjectRedirect />} />
       <Route path="*" element={<Navigate to="/login" replace />} />

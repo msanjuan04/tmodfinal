@@ -19,6 +19,7 @@ import { useAuth } from "@app/context/AuthContext"
 import type { SessionData } from "@app/types/session"
 import type { ClientProjectSummary } from "@app/types/client"
 import { ProjectSwitcher } from "./project-switcher"
+import { TerrazeaBrand } from "@/components/terrazea-brand"
 
 interface NavItem {
   label: string
@@ -63,9 +64,8 @@ export function ClientShell({ user, projects, children }: ClientShellProps) {
   return (
     <div className="flex min-h-screen bg-[#F4F1EA] text-[#2F4F4F]">
       <aside className="hidden w-64 flex-col border-r border-[#E8E6E0] bg-white/80 px-6 pb-6 pt-10 shadow-apple-lg lg:flex">
-        <Link to="/" className="flex items-center gap-3 text-[#2F4F4F]">
-          <img src="/placeholder-logo.svg" alt="Terrazea" className="h-8 w-8" />
-          <span className="font-heading text-lg font-semibold tracking-wide">Terrazea</span>
+        <Link to="/" className="flex items-center text-[#2F4F4F]">
+          <TerrazeaBrand subtitle="Portal Cliente" />
         </Link>
         <p className="mt-3 text-xs text-[#6B7280]">Zona Cliente · protección liquid glass</p>
         <nav className="mt-10 space-y-1">
@@ -102,9 +102,8 @@ export function ClientShell({ user, projects, children }: ClientShellProps) {
             >
               <Menu className="h-5 w-5" />
             </button>
-            <Link to="/" className="flex items-center gap-2 text-[#2F4F4F]">
-              <img src="/placeholder-logo.svg" alt="Terrazea" className="h-7 w-7" />
-              <span className="font-heading text-base font-semibold">Terrazea</span>
+            <Link to="/" className="flex items-center text-[#2F4F4F]">
+              <TerrazeaBrand subtitle="Portal Cliente" collapseSubtitleOnMobile />
             </Link>
           </div>
 

@@ -1,11 +1,13 @@
 import { Link } from "react-router-dom"
 
+import { TERRAZEA_BRAND_ICON_URL } from "@/lib/constants/brand"
+
 export function LandingPage() {
   return (
     <div className="min-h-screen bg-[#F4F1EA] text-[#2F4F4F]">
       <header className="flex items-center justify-between px-6 py-6 sm:px-10">
         <Link to="/" className="flex items-center gap-3">
-          <img src="/placeholder-logo.svg" alt="Terrazea" className="h-10 w-10 rounded-xl border border-[#E8E6E0] bg-white p-1.5 shadow-sm" />
+          <img src={TERRAZEA_BRAND_ICON_URL} alt="Terrazea" className="h-10 w-10" />
           <div>
             <p className="font-heading text-xl font-semibold tracking-wide">Terrazea</p>
             <p className="text-xs uppercase tracking-[0.35em] text-[#C6B89E]">Diseño exterior & Liquid Glass</p>
