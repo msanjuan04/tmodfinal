@@ -6,4 +6,5 @@ export interface SessionData {
   name: string
   clientId: string | null
   role: SessionRole
+  mustUpdatePassword?: boolean
 }

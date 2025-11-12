@@ -7,9 +7,10 @@ import { isSuperAdminEmail } from "@/lib/constants/admin"
 interface RequireAuthProps {
   children: ReactNode
   role?: "client" | "admin" | "any"
+  allowPasswordSetup?: boolean
 }
 
-export function RequireAuth({ children, role = "client" }: RequireAuthProps) {
+export function RequireAuth({ children, role = "client", allowPasswordSetup = false }: RequireAuthProps) {
   const { session, loading } = useAuth()
   const location = useLocation()
 
@@ -24,6 +25,18 @@ export function RequireAuth({ children, role = "client" }: RequireAuthProps) {
   if (!session) {
     const redirect = encodeURIComponent(location.pathname + location.search)
     return <Navigate to={`/login?redirect=${redirect}`} replace />
+  }
+
+  const mustCompletePassword = session.role === "client" && session.mustUpdatePassword === true
+  const isSetupRoute = location.pathname.startsWith("/client/setup-password")
+
+  if (mustCompletePassword && !allowPasswordSetup) {
+    const redirect = `/client/setup-password?next=${encodeURIComponent(location.pathname + location.search)}`
+    return <Navigate to={redirect} replace />
+  }
+
+  if (!mustCompletePassword && allowPasswordSetup && isSetupRoute) {
+    return <Navigate to="/client/dashboard" replace />
   }
 
   if (role === "admin" && !(session.role === "admin" || isSuperAdminEmail(session.email))) {

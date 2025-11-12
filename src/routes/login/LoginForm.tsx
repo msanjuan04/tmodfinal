@@ -89,11 +89,13 @@ export function LoginForm({ redirectTo, reason, mode = "client" }: LoginFormProp
   return (
     <form onSubmit={handleSubmit} className="flex h-full flex-col gap-6">
       <div className="space-y-2">
-        <h2 className="font-heading text-2xl font-semibold text-[#2F4F4F]">Accede a tu zona privada</h2>
+        <h2 className="font-heading text-2xl font-semibold text-[#2F4F4F]">
+          {mode === "admin" ? "Bienvenido al panel Terrazea" : "Accede a tu espacio Terrazea"}
+        </h2>
         <p className="text-sm text-[#6B7280]">
-      {mode === "admin"
-        ? "Introduce tu correo corporativo y contraseña para acceder al portal interno."
-        : "Elige cómo quieres acceder: con tu correo y contraseña, o con tu código de proyecto."}
+          {mode === "admin"
+            ? "Inicia sesión con tu correo corporativo Terrazea y la contraseña asignada por Operaciones."
+            : "Accede con tu correo y contraseña, o introduce el código TRZ de tu proyecto para entrar directamente."}
         </p>
         {helper ? <p className="text-sm font-medium text-[#C05621]">{helper}</p> : null}
       </div>
@@ -206,8 +208,8 @@ export function LoginForm({ redirectTo, reason, mode = "client" }: LoginFormProp
         ) : (
           <span>
             {mode === "admin"
-              ? "Introduce tus credenciales corporativas para acceder al panel interno Terrazea."
-              : "Recibirás un acceso directo si el correo está asociado a tu cuenta Terrazea."}
+              ? "Solo el equipo Terrazea puede acceder. Si necesitas ayuda, contacta con Operaciones."
+              : "Usa el mismo correo que registramos en tu proyecto o tu código TRZ para entrar de forma segura."}
           </span>
         )}
       </div>

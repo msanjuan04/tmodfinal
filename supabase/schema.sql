@@ -102,6 +102,7 @@ create table public.clients (
   tags text[] not null default '{}',
   last_active_at timestamptz,
   metadata jsonb not null default '{}'::jsonb,
+  password_initialized boolean not null default false,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -116,6 +117,7 @@ create table public.app_users (
   password_hash text not null,
   full_name text not null,
   role text not null default 'client' check (role in ('admin', 'client')),
+  must_update_password boolean not null default false,
   is_active boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -148,7 +150,8 @@ returns table (
   id uuid,
   email text,
   full_name text,
-  role text
+  role text,
+  must_update_password boolean
 )
 language sql
 security definer
@@ -158,7 +161,8 @@ as $$
     id,
     email,
     full_name,
-    role
+    role,
+    must_update_password
   from public.app_users
   where email = lower(email_input)
     and is_active = true
@@ -628,7 +632,7 @@ values
   ('carlos.lopez@example.com', crypt('password123', gen_salt('bf')), 'Carlos López', 'client')
 on conflict (email) do nothing;
 
-insert into public.clients (id, full_name, email, phone, client_type, company, status, city, country, tags, last_active_at)
+insert into public.clients (id, full_name, email, phone, client_type, company, status, city, country, tags, last_active_at, password_initialized)
 values (
   '4c0a5c7d-3b6c-4dcb-ab62-81af21d8ab8c',
   'Juan Pérez',
@@ -640,15 +644,16 @@ values (
   'Barcelona',
   'España',
   ARRAY['terrazea','vip'],
-  now() - interval '2 days'
+  now() - interval '2 days',
+  true
 )
 on conflict (id) do nothing;
 
 -- Clientes adicionales
-insert into public.clients (full_name, email, phone, client_type, company, status, city, country, tags, last_active_at)
+insert into public.clients (full_name, email, phone, client_type, company, status, city, country, tags, last_active_at, password_initialized)
 values 
-  ('María García', 'maria.garcia@example.com', '+34 600 222 111', 'Residencial', null, 'activo', 'Madrid', 'España', ARRAY['premium'], now() - interval '1 day'),
-  ('Carlos López', 'carlos.lopez@example.com', '+34 600 333 222', 'Corporativo', 'López Arquitectos', 'inactivo', 'Valencia', 'España', ARRAY['arquitectura'], now() - interval '15 days')
+  ('María García', 'maria.garcia@example.com', '+34 600 222 111', 'Residencial', null, 'activo', 'Madrid', 'España', ARRAY['premium'], now() - interval '1 day', true),
+  ('Carlos López', 'carlos.lopez@example.com', '+34 600 333 222', 'Corporativo', 'López Arquitectos', 'inactivo', 'Valencia', 'España', ARRAY['arquitectura'], now() - interval '15 days', true)
 on conflict (email) do nothing;
 
 insert into public.client_notes (client_id, title, content, tags, is_pinned)

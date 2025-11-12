@@ -202,6 +202,15 @@ export interface CreateProjectPaymentInput {
   proposalDocumentId?: string | null
 }
 
+export interface UpdateProjectPaymentInput {
+  concept?: string
+  description?: string | null
+  amountCents?: number
+  currency?: string
+  dueDate?: string | null
+  proposalDocumentId?: string | null
+}
+
 export async function createProjectPayment(input: CreateProjectPaymentInput): Promise<AdminPaymentRecord> {
   const supabase = createServerSupabaseClient()
 
@@ -247,4 +256,52 @@ export async function createProjectPayment(input: CreateProjectPaymentInput): Pr
     throw new Error("No se pudo recuperar el pago creado")
   }
   return payment
+}
+
+export async function updateProjectPayment(paymentId: string, input: UpdateProjectPaymentInput): Promise<AdminPaymentRecord> {
+  const supabase = createServerSupabaseClient()
+  const existing = await getAdminPaymentById(paymentId)
+  if (!existing) {
+    throw new Error("Pago no encontrado")
+  }
+
+  if (existing.status === "paid") {
+    throw new Error("Los pagos completados no pueden modificarse.")
+  }
+
+  const update: Record<string, unknown> = {
+    updated_at: new Date().toISOString(),
+  }
+
+  if (input.concept !== undefined) update.concept = input.concept.trim()
+  if (input.description !== undefined) update.description = input.description
+  if (input.dueDate !== undefined) update.due_date = input.dueDate ?? null
+  if (input.proposalDocumentId !== undefined) update.proposal_document_id = input.proposalDocumentId
+
+  if (input.amountCents !== undefined) {
+    if (existing.status !== "draft") {
+      throw new Error("Solo puedes modificar el importe en pagos en borrador.")
+    }
+    update.amount_cents = input.amountCents
+  }
+
+  if (input.currency !== undefined) {
+    if (existing.status !== "draft") {
+      throw new Error("Solo puedes modificar la divisa en pagos en borrador.")
+    }
+    update.currency = input.currency.toUpperCase()
+  }
+
+  const { error } = await supabase.from("project_payments").update(update).eq("id", paymentId)
+  if (error) throw error
+
+  const updated = await getAdminPaymentById(paymentId)
+  if (!updated) throw new Error("No se pudo recuperar el pago actualizado")
+  return updated
+}
+
+export async function deleteProjectPayment(paymentId: string): Promise<void> {
+  const supabase = createServerSupabaseClient()
+  const { error } = await supabase.from("project_payments").delete().eq("id", paymentId)
+  if (error) throw error
 }

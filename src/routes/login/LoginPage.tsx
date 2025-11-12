@@ -35,20 +35,27 @@ export function LoginPage() {
     return <Navigate to={redirectTo} replace />
   }
 
-  const badgeLabel = target === "admin" ? "Portal Admin Terrazea" : "Zona Cliente Terrazea"
-  const heading = target === "admin" ? "Gestiona Terrazea desde tu panel de equipo" : "Accede a tu refugio Terrazea con un toque de vidrio líquido"
-  const description = target === "admin"
-    ? "Administra clientes, proyectos, calendarios y documentación con la misma calma que transmitimos a cada espacio."
-    : "Gestiona proyectos, documentos y mensajes con la misma transparencia que llevamos a tus materiales."
-  const helperBox = target === "admin"
-    ? {
-        title: "¿Eres parte del equipo Terrazea?",
-        content: "Inicia sesión con tu correo corporativo. Si aún no tienes acceso, contacta con operaciones para activarlo.",
-      }
-    : {
-        title: "¿Es tu primera vez?",
-        content: "Si eres cliente Terrazea, introduce el correo con el que trabajamos contigo. Recibirás acceso inmediato a tu panel privado.",
-      }
+  const badgeLabel = target === "admin" ? "Panel interno Terrazea" : "Portal cliente Terrazea"
+  const heading =
+    target === "admin"
+      ? "Opera proyectos Terrazea con precisión y calma"
+      : "Bienvenido a tu panel de seguimiento Terrazea"
+  const description =
+    target === "admin"
+      ? "Centraliza clientes, hitos, pagos y documentación en un entorno diseñado para el día a día del estudio."
+      : "Consulta avances, cronogramas, documentos y pagos de tu proyecto en tiempo real desde cualquier dispositivo."
+  const helperBox =
+    target === "admin"
+      ? {
+          title: "¿Necesitas acceso corporativo?",
+          content:
+            "Inicia sesión con tu correo @terrazea o autorizado. Si aún no tienes credenciales, solicita el alta al equipo de Operaciones.",
+        }
+      : {
+          title: "¿Es tu primera vez como cliente?",
+          content:
+            "Usa el correo que compartiste con Terrazea o entra con tu código TRZ. Una vez establezcas tu contraseña, podrás acceder siempre con tu correo.",
+        }
 
   return (
     <div className="flex min-h-screen flex-col bg-[#F4F1EA]">

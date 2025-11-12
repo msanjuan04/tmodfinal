@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer"
+import { randomBytes } from "node:crypto"
 import { Router } from "express"
 import { z } from "zod"
 import type { SupabaseClient } from "@supabase/supabase-js"
@@ -63,21 +64,18 @@ import {
 import { requireAdminSession } from "../services/session"
 import { asyncHandler } from "../utils/async-handler"
 import { isProjectTaskStatus } from "../../types/project-tasks"
-import { createProjectPayment, getAdminPaymentById, listAdminPayments } from "../../lib/supabase/admin-payments"
+import {
+  createProjectPayment,
+  deleteProjectPayment,
+  getAdminPaymentById,
+  listAdminPayments,
+  updateProjectPayment,
+} from "../../lib/supabase/admin-payments"
 import { ensureStripeCustomer, createCheckoutSessionForPayment } from "../../lib/payments/stripe"
 import { env } from "../config/env"
 import type { AdminPaymentRecord } from "@app/types/admin"
 
 type ProjectTeamRole = (typeof PROJECT_TEAM_ROLES)[number]
-
-class PaymentSendError extends Error {
-  statusCode: number
-  constructor(message: string, statusCode = 500) {
-    super(message)
-    this.name = "PaymentSendError"
-    this.statusCode = statusCode
-  }
-}
 
 const createClientSchema = z.object({
   fullName: z.string().min(3).max(120),
@@ -216,6 +214,38 @@ const createPaymentSchema = z.object({
   attachment: attachmentSchema.optional(),
 })
 
+const updatePaymentSchema = z
+  .object({
+    concept: z
+      .string()
+      .min(3)
+      .max(160)
+      .optional()
+      .transform((value) => (value && value.trim().length > 0 ? value.trim() : undefined)),
+    description: z
+      .string()
+      .max(1000)
+      .optional()
+      .transform((value) => (value && value.trim().length > 0 ? value.trim() : null)),
+    amount: amountSchema.optional(),
+    currency: z
+      .string()
+      .optional()
+      .transform((value) => (value && value.trim().length > 0 ? value.trim().toUpperCase() : undefined)),
+    dueDate: optionalDate,
+    attachment: attachmentSchema.optional(),
+  })
+  .refine(
+    (data) =>
+      data.concept !== undefined ||
+      data.description !== undefined ||
+      data.amount !== undefined ||
+      data.currency !== undefined ||
+      data.dueDate !== undefined ||
+      data.attachment !== undefined,
+    { message: "Debes proporcionar al menos un campo para actualizar." },
+  )
+
 const STORAGE_BUCKET = "project-assets"
 
 async function ensureClientAppUser(
@@ -226,7 +256,7 @@ async function ensureClientAppUser(
   try {
     const { data: client, error: clientError } = await supabase
       .from("clients")
-      .select("id, full_name, email")
+      .select("id, full_name, email, password_initialized")
       .eq("id", clientId)
       .maybeSingle()
 
@@ -244,7 +274,7 @@ async function ensureClientAppUser(
 
     const { data: existingUser, error: userError } = await supabase
       .from("app_users")
-      .select("id, is_active")
+      .select("id, is_active, must_update_password")
       .eq("email", email)
       .maybeSingle()
 
@@ -254,12 +284,14 @@ async function ensureClientAppUser(
     }
 
     if (!existingUser) {
-      const passwordHash = await bcrypt.hash(options.projectCode, 10)
+      const tempPassword = randomBytes(12).toString("base64url")
+      const passwordHash = await bcrypt.hash(tempPassword, 10)
       const { error: insertError } = await supabase.from("app_users").insert({
         email,
         full_name: fullName,
         password_hash: passwordHash,
         role: "client",
+        must_update_password: true,
         is_active: true,
       })
 
@@ -278,6 +310,16 @@ async function ensureClientAppUser(
         console.error("No se pudo reactivar el usuario del cliente", updateError)
       }
     }
+
+    if (client.password_initialized === false && existingUser.must_update_password !== true) {
+      const { error: flagError } = await supabase
+        .from("app_users")
+        .update({ must_update_password: true })
+        .eq("id", existingUser.id)
+      if (flagError) {
+        console.error("No se pudo marcar el usuario para crear contraseña", flagError)
+      }
+    }
   } catch (error) {
     console.error("No se pudo asegurar el usuario del cliente", error)
   }
@@ -288,30 +330,47 @@ async function sendDraftPayment(payment: AdminPaymentRecord): Promise<AdminPayme
     return payment
   }
 
-  if (!env.stripeSecretKey || !env.stripeSecretKey.startsWith("sk_")) {
-    throw new PaymentSendError(
-      "Stripe no está configurado. Configura STRIPE_SECRET_KEY para poder enviar pagos automáticamente.",
-      503,
-    )
+  const supabase = createServerSupabaseClient()
+  const clientAppBase = (env.clientAppUrl ?? "http://localhost:5173").replace(/\/$/, "")
+
+  const fallbackPending = async (reason: string) => {
+    console.warn(`[payments] Envío omitido (${reason}). Marcando pago ${payment.id} como pendiente (modo fallback).`)
+    const { error: updateError } = await supabase
+      .from("project_payments")
+      .update({
+        status: "pending",
+        sent_at: new Date().toISOString(),
+        payment_link: `${clientAppBase}/client/payments?payment=${payment.id}`,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", payment.id)
+    if (updateError) {
+      throw updateError
+    }
+    const updated = await getAdminPaymentById(payment.id)
+    if (!updated) {
+      throw new Error("No se pudo recuperar el pago enviado.")
+    }
+    return updated
   }
 
-  const supabase = createServerSupabaseClient()
+  const stripeEnabled = Boolean(env.stripeSecretKey && env.stripeSecretKey.startsWith("sk_"))
+  if (!stripeEnabled) {
+    return fallbackPending("Stripe no configurado")
+  }
+
   const { data: client, error: clientError } = await supabase
     .from("clients")
     .select("id, full_name, email, stripe_customer_id")
     .eq("id", payment.clientId)
     .maybeSingle()
 
-  if (clientError) {
-    throw new PaymentSendError("No se pudo obtener el cliente asociado al pago.", 500)
-  }
-
-  if (!client) {
-    throw new PaymentSendError("Cliente asociado no encontrado.", 404)
+  if (clientError || !client) {
+    return fallbackPending("Cliente no disponible")
   }
 
   if (!client.email) {
-    throw new PaymentSendError("El cliente no tiene un correo electrónico configurado para Stripe.", 400)
+    return fallbackPending("Cliente sin correo")
   }
 
   try {
@@ -322,7 +381,6 @@ async function sendDraftPayment(payment: AdminPaymentRecord): Promise<AdminPayme
       stripeCustomerId: client.stripe_customer_id ?? payment.clientStripeCustomerId ?? payment.stripeCustomerId ?? null,
     })
 
-    const clientAppBase = env.clientAppUrl.replace(/\/$/, "")
     const checkoutSession = await createCheckoutSessionForPayment({
       payment,
       customerId: stripeCustomerId,
@@ -357,15 +415,12 @@ async function sendDraftPayment(payment: AdminPaymentRecord): Promise<AdminPayme
 
     const updated = await getAdminPaymentById(payment.id)
     if (!updated) {
-      throw new PaymentSendError("No se pudo recuperar el pago enviado.", 500)
+      throw new Error("No se pudo recuperar el pago enviado.")
     }
     return updated
   } catch (error) {
-    if (error instanceof PaymentSendError) {
-      throw error
-    }
     console.error("Error enviando pago", error)
-    throw new PaymentSendError("No pudimos generar el enlace de pago. Inténtalo de nuevo más tarde.", 502)
+    return fallbackPending("Error en Stripe")
   }
 }
 
@@ -795,17 +850,32 @@ router.post(
     }
 
     const supabase = createServerSupabaseClient()
+    const normalizedEmail = parsed.data.email.trim().toLowerCase()
+
     const { data, error } = await supabase
       .from("clients")
       .insert({
         full_name: parsed.data.fullName.trim(),
-        email: parsed.data.email.trim().toLowerCase(),
+        email: normalizedEmail,
+        password_initialized: false,
       })
       .select("id, full_name, email")
       .maybeSingle()
 
     if (error || !data) {
       const isUnique = error?.code === "23505"
+      if (isUnique) {
+        const { data: existingClient } = await supabase
+          .from("clients")
+          .select("id, full_name, email")
+          .eq("email", normalizedEmail)
+          .maybeSingle()
+
+        if (existingClient) {
+          response.json({ client: existingClient })
+          return
+        }
+      }
       response.status(isUnique ? 409 : 500).json({
         message: isUnique ? "Ya existe un cliente con este correo." : "No se pudo crear el cliente.",
       })
@@ -855,9 +925,8 @@ router.post(
           uploadedBy: session.userId,
         })
       } catch (error) {
-        console.error("Error al guardar el presupuesto adjunto", error)
-        response.status(500).json({ message: "No se pudo guardar el PDF adjunto. Inténtalo de nuevo." })
-        return
+        console.warn("No se pudo guardar el PDF adjunto. Continuamos sin documento.", error)
+        proposalDocumentId = null
       }
     }
 
@@ -876,11 +945,7 @@ router.post(
       try {
         sentPayment = await sendDraftPayment(payment)
       } catch (error) {
-        if (error instanceof PaymentSendError) {
-          console.warn("No se pudo enviar el pago automáticamente:", error.message)
-        } else {
-          console.error("No se pudo enviar el pago automáticamente", error)
-        }
+        console.error("No se pudo enviar el pago automáticamente", error)
       }
       response.status(201).json({ payment: sentPayment })
     } catch (error) {
@@ -918,12 +983,91 @@ router.post(
       const updated = await sendDraftPayment(payment)
       response.json({ payment: updated })
     } catch (error) {
-      if (error instanceof PaymentSendError) {
-        response.status(error.statusCode).json({ message: error.message, payment })
-        return
-      }
-      throw error
+      console.error("No se pudo reenviar el pago", error)
+      response.status(500).json({ message: "No pudimos volver a enviar el pago. Inténtalo de nuevo.", payment })
     }
+  }),
+)
+
+router.patch(
+  "/payments/:paymentId",
+  asyncHandler(async (request, response) => {
+    const session = requireAdminSession(request)
+    const { paymentId } = request.params
+    const parsed = updatePaymentSchema.safeParse(request.body)
+    if (!parsed.success) {
+      response.status(400).json({ message: "Datos de pago inválidos", errors: parsed.error.flatten().fieldErrors })
+      return
+    }
+
+    const payment = await getAdminPaymentById(paymentId)
+    if (!payment) {
+      response.status(404).json({ message: "Pago no encontrado" })
+      return
+    }
+
+    if (payment.status === "paid") {
+      response.status(400).json({ message: "Los pagos completados no pueden editarse." })
+      return
+    }
+
+    const { concept, description, amount, currency, dueDate, attachment } = parsed.data
+    let proposalDocumentId = payment.proposalDocumentId ?? null
+
+    if (attachment) {
+      try {
+        const upload = await uploadProjectAsset(payment.projectId, "documents", attachment.name, attachment.content, attachment.fileType)
+        proposalDocumentId = await createProjectDocument(payment.projectId, {
+          name: attachment.name,
+          category: "Presupuestos",
+          fileType: attachment.fileType,
+          sizeLabel: attachment.sizeLabel ?? null,
+          storagePath: upload.storagePath,
+          notifyClient: false,
+          tags: ["presupuesto", "pagos"],
+          notes: description ?? payment.description ?? null,
+          uploadedBy: session.userId,
+        })
+      } catch (error) {
+        console.warn("No se pudo adjuntar el PDF durante la edición", error)
+      }
+    }
+
+    const updatePayload: UpdateProjectPaymentInput = {}
+    if (concept !== undefined) updatePayload.concept = concept
+    if (description !== undefined) updatePayload.description = description
+    if (amount !== undefined) updatePayload.amountCents = Math.round(amount * 100)
+    if (currency !== undefined) updatePayload.currency = currency
+    if (dueDate !== undefined) updatePayload.dueDate = dueDate ?? null
+    if (proposalDocumentId !== payment.proposalDocumentId) updatePayload.proposalDocumentId = proposalDocumentId
+
+    try {
+      const updated = await updateProjectPayment(paymentId, updatePayload)
+      response.json({ payment: updated })
+    } catch (error) {
+      response.status(400).json({ message: error instanceof Error ? error.message : "No se pudo actualizar el pago." })
+    }
+  }),
+)
+
+router.delete(
+  "/payments/:paymentId",
+  asyncHandler(async (request, response) => {
+    requireAdminSession(request)
+    const { paymentId } = request.params
+    const payment = await getAdminPaymentById(paymentId)
+    if (!payment) {
+      response.status(404).json({ message: "Pago no encontrado" })
+      return
+    }
+
+    if (payment.status === "paid") {
+      response.status(400).json({ message: "No puedes eliminar un pago completado." })
+      return
+    }
+
+    await deleteProjectPayment(paymentId)
+    response.status(204).end()
   }),
 )
 
@@ -990,7 +1134,7 @@ router.post(
 
         const { data: insertedClient, error: insertClientError } = await supabase
           .from("clients")
-          .insert({ full_name: clientName, email: clientEmail })
+          .insert({ full_name: clientName, email: clientEmail, password_initialized: false })
           .select("id")
           .maybeSingle()
 

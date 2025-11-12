@@ -801,7 +801,9 @@ function ProjectFormSheet({ open, onOpenChange, mode, values, setValues, loading
               <div className="mt-3 flex items-center justify-between gap-3">
                 <div>
                   <p className="font-heading text-2xl text-[#0D9488]">{values.code || "Se generará automáticamente"}</p>
-                  <p className="text-xs text-[#6B7280]">El cliente podrá entrar con este código en cuanto actives el proyecto.</p>
+                  <p className="text-xs text-[#6B7280]">
+                    El código se asigna automáticamente al guardar y el cliente podrá usarlo en cuanto actives el proyecto.
+                  </p>
                 </div>
                 <Badge className="rounded-full bg-[#ECFDF5] px-3 py-1 text-xs font-semibold text-[#0D9488]">
                   {mode === "create" ? "Nuevo" : "Editando"}
@@ -813,15 +815,9 @@ function ProjectFormSheet({ open, onOpenChange, mode, values, setValues, loading
                 <Label className="text-sm text-[#2F4F4F]">Nombre del proyecto</Label>
                 <Input value={values.name} onChange={handleChange("name")} required className="border-[#E8E6E0]" />
               </div>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label className="text-sm text-[#2F4F4F]">Código</Label>
-                  <Input value={values.code} onChange={handleChange("code")} className="border-[#E8E6E0]" placeholder="TRZ-2024-001" />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-sm text-[#2F4F4F]">Slug</Label>
-                  <Input value={values.slug} onChange={handleChange("slug")} className="border-[#E8E6E0]" placeholder="terraza-mediterranea" />
-                </div>
+              <div className="space-y-2">
+                <Label className="text-sm text-[#2F4F4F]">Slug</Label>
+                <Input value={values.slug} onChange={handleChange("slug")} className="border-[#E8E6E0]" placeholder="terraza-mediterranea" />
               </div>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-2">

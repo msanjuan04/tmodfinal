@@ -13,20 +13,6 @@ export function LandingPage() {
             <p className="text-xs uppercase tracking-[0.35em] text-[#C6B89E]">Diseño exterior & Liquid Glass</p>
           </div>
         </Link>
-        <div className="hidden items-center gap-3 sm:flex">
-          <Link
-            to="/login?target=client&fresh=1"
-            className="rounded-full border border-[#2F4F4F] px-4 py-2 text-sm font-medium transition hover:bg-[#2F4F4F] hover:text-white"
-          >
-            Acceso Cliente
-          </Link>
-          <Link
-            to="/login?target=admin&fresh=1"
-            className="rounded-full border border-[#2F4F4F] px-4 py-2 text-sm font-medium transition hover:bg-[#2F4F4F] hover:text-white"
-          >
-            Acceso Admin
-          </Link>
-        </div>
       </header>
 
       <main className="relative overflow-hidden px-6 pb-16 pt-10 sm:px-10">
@@ -37,37 +23,23 @@ export function LandingPage() {
         <section className="relative mx-auto flex max-w-6xl flex-col gap-12 lg:flex-row lg:items-center">
           <div className="flex-1 space-y-6">
             <span className="inline-flex items-center rounded-full bg-white/70 px-4 py-2 text-xs font-medium uppercase tracking-[0.35em] text-[#C6B89E] shadow-sm">
-              CLIENT ZONE
+            PORTAL TERRAZEA
             </span>
             <h1 className="font-heading text-4xl font-semibold leading-tight sm:text-5xl lg:text-[3.4rem]">
-              Elige cómo quieres entrar en tu universo Terrazea.
+              Un portal único para clientes y equipo Terrazea.
             </h1>
             <p className="max-w-xl text-base text-[#4B5563] sm:text-lg">
-              Clientes y equipo acceden desde el mismo portal, cada uno con su experiencia: seguimiento de proyectos,
-              calendarios, documentos y comunicación cuidada con acabado liquid glass.
+              Seguimiento de obra, calendario, documentación y comunicación fluida en un entorno cuidado con el detalle
+              que define a Terrazea, tanto para quienes nos eligen como para quienes lo hacen posible.
             </p>
-            <div className="flex flex-col gap-4 sm:flex-row">
-              <Link
-                to="/login?target=client&fresh=1"
-                className="inline-flex items-center justify-center rounded-full bg-[#2F4F4F] px-6 py-3 text-sm font-semibold text-white shadow-apple transition hover:bg-[#1F3535]"
-              >
-                Soy cliente Terrazea
-              </Link>
-              <Link
-                to="/login?target=admin&fresh=1"
-                className="inline-flex items-center justify-center rounded-full border border-[#2F4F4F] px-6 py-3 text-sm font-semibold text-[#2F4F4F] shadow-apple transition hover:bg-[#2F4F4F] hover:text-white"
-              >
-                Soy parte del equipo
-              </Link>
-            </div>
           </div>
 
           <div className="flex-1 space-y-6 rounded-[2.5rem] border border-[#E8E6E0] bg-white/70 p-8 shadow-apple-xl backdrop-blur-xl">
             <div className="space-y-2">
               <p className="text-xs uppercase tracking-[0.35em] text-[#C6B89E]">Portal Terrazea</p>
-              <h2 className="font-heading text-2xl font-semibold text-[#2F4F4F]">Dos accesos, un mismo universo</h2>
+              <h2 className="font-heading text-2xl font-semibold text-[#2F4F4F]">Experiencia adaptada a cada rol</h2>
               <p className="text-sm text-[#6B7280]">
-                Elige tu acceso para continuar con la mayor tranquilidad. Los clientes siguen su proyecto, el equipo gestiona la operación.
+                Los clientes consultan avances y decisiones; el equipo dirige proyectos, agenda y documentación desde un solo lugar.
               </p>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">

@@ -76,6 +76,7 @@ function buildMatch(user: FallbackUser): FallbackMatch {
       name: user.name,
       clientId: user.clientId ?? null,
       role: user.role,
+      mustUpdatePassword: false,
     },
     projectCode: user.projectCode ?? null,
     projectSlug: user.projectSlug ?? null,

@@ -38,6 +38,11 @@ export async function loginWithProjectCode(projectCode: string) {
   return response.data
 }
 
+export async function setupClientPassword(password: string) {
+  const response = await api.post<{ success: boolean; message?: string }>("/auth/setup-password", { password })
+  return response.data
+}
+
 export async function logout() {
   await api.post("/auth/logout")
 }

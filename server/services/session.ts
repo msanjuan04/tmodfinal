@@ -12,6 +12,7 @@ export interface SessionData {
   name: string
   clientId: string | null
   role: SessionRole
+  mustUpdatePassword?: boolean
 }
 
 const SESSION_COOKIE_NAME = "terrazea_session"
@@ -55,6 +56,7 @@ function decodeSession(encoded: string): SessionData | null {
       name: parsed.name,
       clientId: typeof parsed.clientId === "string" ? parsed.clientId : null,
       role,
+      mustUpdatePassword: parsed.mustUpdatePassword === true,
     }
   } catch {
     return null

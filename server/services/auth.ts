@@ -1,5 +1,6 @@
 // @ts-nocheck
 import type { SupabaseClient } from "@supabase/supabase-js"
+import bcrypt from "bcryptjs"
 
 import { createServerSupabaseClient } from "../../lib/supabase/server"
 import { resolveAdminLoginCandidates, resolveAdminSessionEmail, isSuperAdminEmail } from "../../lib/constants/admin"
@@ -64,27 +65,36 @@ export async function loginWithEmailAndPassword(email: string, password: string)
     console.error("Error creating Supabase client", error)
   }
 
-  let user: Record<string, unknown> | null = null
+  let user:
+    | (Record<string, unknown> & {
+        password_hash?: string | null
+        must_update_password?: boolean | null
+        is_active?: boolean | null
+      })
+    | null = null
   let matchedEmail = normalizedEmail
 
   if (supabase) {
     for (const candidate of resolveAdminLoginCandidates(normalizedEmail)) {
       try {
-        const { data, error } = await supabase.rpc("login_user_with_password", {
-          email_input: candidate,
-        password_input: sanitizedPassword,
-      })
+        const { data, error } = await supabase
+          .from("app_users")
+          .select("id, email, full_name, role, password_hash, must_update_password, is_active")
+          .eq("email", candidate)
+          .maybeSingle()
 
         if (error) {
-          console.error("Error verifying credentials", error)
+          console.error("Error fetching user by email", error)
           return { result: { success: false, message: "No hemos podido iniciar sesión. Inténtalo de nuevo." } }
         }
 
-        const candidateUser = Array.isArray(data) ? data[0] : data
-        if (candidateUser) {
-          user = candidateUser as Record<string, unknown>
-          matchedEmail = candidate
-          break
+        if (data && data.is_active !== false && data.password_hash) {
+          const matches = bcrypt.compareSync(sanitizedPassword, data.password_hash)
+          if (matches) {
+            user = data as typeof user
+            matchedEmail = candidate
+            break
+          }
         }
       } catch (error) {
         console.error("Unexpected error verifying credentials", error)
@@ -120,6 +130,16 @@ export async function loginWithEmailAndPassword(email: string, password: string)
   }
 
   const sessionRole = resolveRole(normalizedUser.role, normalizedUser.email)
+  const mustUpdatePassword = user?.must_update_password === true
+
+  if (mustUpdatePassword && sessionRole === "client") {
+    return {
+      result: {
+        success: false,
+        message: "Activa tu acceso creando una contraseña nueva desde el enlace que aparece al entrar con tu código de proyecto.",
+      },
+    }
+  }
 
   let clientId: string | null = null
   let displayName = normalizedUser.fullName
@@ -169,6 +189,7 @@ export async function loginWithEmailAndPassword(email: string, password: string)
     name: displayName,
     clientId,
     role: sessionRole,
+    mustUpdatePassword: false,
   }
   const redirectTarget = session.role === "admin" ? "/dashboard" : "/client/dashboard?welcome=1"
 
@@ -225,7 +246,7 @@ export async function loginWithProjectCode(projectCode: string): Promise<AuthSuc
       .from("projects")
       .select(`
         id, slug, code, name, client_id,
-        clients!inner(id, full_name, email)
+        clients!inner(id, full_name, email, password_initialized)
       `)
       .eq("code", trimmedCode)
       .maybeSingle()
@@ -246,11 +267,18 @@ export async function loginWithProjectCode(projectCode: string): Promise<AuthSuc
   }
 
   const clientEmail = project.clients.email
-  let user: any
+  const clientNeedsPassword = project.clients.password_initialized === false
+  let user: {
+    id: string
+    email: string
+    full_name?: string | null
+    role?: string | null
+    must_update_password?: boolean | null
+  } | null = null
   try {
     const { data: userData, error: userError } = await supabase
       .from("app_users")
-      .select("id, email, full_name, role")
+      .select("id, email, full_name, role, must_update_password")
       .eq("email", clientEmail)
       .eq("is_active", true)
       .maybeSingle()
@@ -270,24 +298,52 @@ export async function loginWithProjectCode(projectCode: string): Promise<AuthSuc
     return { result: { success: false, message: "No tienes acceso a este proyecto. Contacta con Terrazea." } }
   }
 
+  if (clientNeedsPassword && user.must_update_password !== true) {
+    const { error: flagError } = await supabase
+      .from("app_users")
+      .update({ must_update_password: true })
+      .eq("id", user.id)
+      .select("must_update_password")
+      .maybeSingle()
+    if (flagError) {
+      console.error("No se pudo marcar al usuario para actualización de contraseña", flagError)
+    } else {
+      user.must_update_password = true
+    }
+  }
+
+  const sessionRole = resolveRole(user.role, clientEmail)
+  const mustUpdatePassword = user?.must_update_password === true
+
   const session: SessionData = {
     userId: user.id,
     email: clientEmail,
     name: project.clients.full_name,
     clientId: project.client_id,
-    role: resolveRole(user.role, clientEmail),
+    role: sessionRole,
+    mustUpdatePassword,
   }
-  const redirectTarget =
+  const defaultRedirect =
     session.role === "admin"
       ? "/dashboard"
       : `/client/dashboard?project=${encodeURIComponent(project.slug)}&welcome=1`
+
+  const redirectTarget =
+    session.role === "client" && mustUpdatePassword
+      ? `/client/setup-password?next=${encodeURIComponent(defaultRedirect)}`
+      : defaultRedirect
+
+  const message =
+    session.role === "client" && mustUpdatePassword
+      ? "Crea tu contraseña personalizada para continuar."
+      : "Acceso concedido. Redirigiendo a tu proyecto..."
 
   return {
     session,
     result: {
       success: true,
       redirectTo: redirectTarget,
-      message: "Acceso concedido. Redirigiendo a tu proyecto...",
+      message,
     },
   }
 }
@@ -338,6 +394,7 @@ export async function loginWithEmail(email: string, projectCode?: string): Promi
         email: string
         display_name?: string | null
         role?: string | null
+        must_update_password?: boolean | null
       }
     | null = null
   let matchedEmail = normalizedEmail
@@ -347,7 +404,7 @@ export async function loginWithEmail(email: string, projectCode?: string): Promi
       try {
         const { data, error } = await supabase
           .from("app_users")
-          .select("id, email, display_name, role")
+          .select("id, email, display_name, role, must_update_password")
           .eq("email", candidate)
           .maybeSingle()
 
@@ -382,6 +439,16 @@ export async function loginWithEmail(email: string, projectCode?: string): Promi
 
   const effectiveEmail = isSuperAdminEmail(normalizedEmail) ? resolveAdminSessionEmail(normalizedEmail) : matchedEmail
   const sessionRole = resolveRole(user.role, effectiveEmail)
+  const mustUpdatePassword = user?.must_update_password === true
+
+  if (mustUpdatePassword && sessionRole === "client") {
+    return {
+      result: {
+        success: false,
+        message: "Activa tu acceso creando una contraseña nueva desde tu código de proyecto.",
+      },
+    }
+  }
 
   let clientId: string | null = null
   let displayName = user.display_name ?? effectiveEmail.split("@")[0]
@@ -431,6 +498,7 @@ export async function loginWithEmail(email: string, projectCode?: string): Promi
     name: displayName,
     clientId,
     role: sessionRole,
+    mustUpdatePassword: false,
   }
 
   let redirectTo = session.role === "admin" ? "/dashboard" : "/client/dashboard?welcome=1"

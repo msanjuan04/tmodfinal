@@ -198,6 +198,20 @@ export interface CreateAdminPaymentPayload {
   }
 }
 
+export interface UpdateAdminPaymentPayload {
+  concept?: string
+  description?: string
+  amount?: number
+  currency?: string
+  dueDate?: string | null
+  attachment?: {
+    name: string
+    fileType: string
+    sizeLabel?: string
+    content: string
+  }
+}
+
 export async function fetchAdminPayments(): Promise<AdminPaymentsResponse> {
   const response = await api.get<AdminPaymentsResponse>("/admin/payments")
   return response.data
@@ -206,6 +220,15 @@ export async function fetchAdminPayments(): Promise<AdminPaymentsResponse> {
 export async function createAdminPayment(payload: CreateAdminPaymentPayload): Promise<AdminPaymentRecord> {
   const response = await api.post<{ payment: AdminPaymentRecord }>("/admin/payments", payload)
   return response.data.payment
+}
+
+export async function updateAdminPayment(paymentId: string, payload: UpdateAdminPaymentPayload): Promise<AdminPaymentRecord> {
+  const response = await api.patch<{ payment: AdminPaymentRecord }>(`/admin/payments/${paymentId}`, payload)
+  return response.data.payment
+}
+
+export async function deleteAdminPayment(paymentId: string) {
+  await api.delete(`/admin/payments/${paymentId}`)
 }
 
 export async function createAdminProjectPhase(projectId: string, payload: Partial<AdminProjectPhase> & { name: string }) {

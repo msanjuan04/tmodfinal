@@ -2,6 +2,7 @@ import { Navigate, Route, Routes, useParams } from "react-router-dom"
 
 import { ClientLayout } from "./routes/client/ClientLayout"
 import { ClientDashboardPage } from "./routes/client/Dashboard"
+import { ClientPasswordSetupPage } from "./routes/client/SetupPassword"
 import { LoginPage } from "./routes/login/LoginPage"
 import { RequireAuth } from "./routes/common/RequireAuth"
 import { ClientProjectsPage } from "./routes/client/Projects"
@@ -27,6 +28,14 @@ export default function App() {
     <Routes>
       <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<LoginPage />} />
+      <Route
+        path="/client/setup-password"
+        element={
+          <RequireAuth role="client" allowPasswordSetup>
+            <ClientPasswordSetupPage />
+          </RequireAuth>
+        }
+      />
       <Route
         path="/client"
         element={

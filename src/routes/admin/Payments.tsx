@@ -3,7 +3,7 @@ import { Link } from "react-router-dom"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import { toast } from "sonner"
-import { AlertCircle, CreditCard, Loader2, Plus, RefreshCw } from "lucide-react"
+import { AlertCircle, CreditCard, Loader2, Paperclip, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -15,7 +15,14 @@ import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle, SheetTrigger
 
 import type { AdminPaymentRecord, AdminPaymentsSummary, PaymentStatus } from "@app/types/admin"
 import type { ProjectCalendarSummary } from "@app/types/events"
-import { createAdminPayment, fetchAdminPayments, type CreateAdminPaymentPayload } from "@app/lib/api/admin"
+import {
+  createAdminPayment,
+  deleteAdminPayment,
+  fetchAdminPayments,
+  updateAdminPayment,
+  type CreateAdminPaymentPayload,
+  type UpdateAdminPaymentPayload,
+} from "@app/lib/api/admin"
 import { listProjectCalendarSummaries } from "@app/lib/api/events"
 
 const STATUS_LABELS: Record<PaymentStatus, string> = {
@@ -78,9 +85,12 @@ export function AdminPaymentsPage() {
   const [form, setForm] = useState(INITIAL_FORM)
   const [formError, setFormError] = useState<string | null>(null)
   const [sheetOpen, setSheetOpen] = useState(false)
+  const [formMode, setFormMode] = useState<"create" | "edit">("create")
+  const [editingPayment, setEditingPayment] = useState<AdminPaymentRecord | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null)
   const [attachmentError, setAttachmentError] = useState<string | null>(null)
+  const [actionPaymentId, setActionPaymentId] = useState<string | null>(null)
 
   const loadPayments = useCallback(async () => {
     try {
@@ -113,12 +123,19 @@ export function AdminPaymentsPage() {
     })()
   }, [])
 
+  const upcomingDueDateLabel = summary?.upcomingDueDate ? formatDate(summary.upcomingDueDate) : "—"
+
   const canSubmit = useMemo(() => {
     const amountNumber = Number(form.amount.replace(",", "."))
-    return Boolean(form.projectId && form.concept.trim() && Number.isFinite(amountNumber) && amountNumber > 0)
-  }, [form.amount, form.concept, form.projectId])
-
-  const upcomingDueDateLabel = summary?.upcomingDueDate ? formatDate(summary.upcomingDueDate) : "—"
+    const concept = form.concept.trim()
+    return Boolean(
+      form.projectId &&
+        concept.length >= 3 &&
+        Number.isFinite(amountNumber) &&
+        amountNumber > 0 &&
+        form.dueDate,
+    )
+  }, [form.amount, form.concept, form.projectId, form.dueDate])
 
   const handleAttachmentChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0] ?? null
@@ -136,6 +153,36 @@ export function AdminPaymentsPage() {
     setAttachmentFile(file)
   }
 
+  const resetForm = useCallback(() => {
+    setForm(INITIAL_FORM)
+    setFormError(null)
+    setAttachmentFile(null)
+    setAttachmentError(null)
+    setEditingPayment(null)
+    setFormMode("create")
+  }, [])
+
+  const openCreateForm = useCallback(() => {
+    resetForm()
+    setSheetOpen(true)
+  }, [resetForm])
+
+  const openEditForm = useCallback((payment: AdminPaymentRecord) => {
+    setFormMode("edit")
+    setEditingPayment(payment)
+    setForm({
+      projectId: payment.projectId,
+      concept: payment.concept,
+      description: payment.description ?? "",
+      amount: (payment.amountCents / 100).toString(),
+      dueDate: payment.dueDate ?? "",
+    })
+    setFormError(null)
+    setAttachmentFile(null)
+    setAttachmentError(null)
+    setSheetOpen(true)
+  }, [])
+
   const handleSubmit = async () => {
     const normalizedAmount = Number(form.amount.replace(",", "."))
     if (!Number.isFinite(normalizedAmount) || normalizedAmount <= 0) {
@@ -145,6 +192,17 @@ export function AdminPaymentsPage() {
 
     if (!form.projectId) {
       setFormError("Selecciona un proyecto.")
+      return
+    }
+
+    const trimmedConcept = form.concept.trim()
+    if (trimmedConcept.length < 3) {
+      setFormError("Introduce un concepto de al menos 3 caracteres.")
+      return
+    }
+
+    if (!form.dueDate) {
+      setFormError("Selecciona la fecha objetivo.")
       return
     }
 
@@ -169,34 +227,69 @@ export function AdminPaymentsPage() {
         }
       }
 
-      const payment = await createAdminPayment({
-        projectId: form.projectId,
-        concept: form.concept.trim(),
-        description: form.description.trim() || undefined,
-        amount: normalizedAmount,
-        currency: "EUR",
-        dueDate: form.dueDate || null,
-        attachment: attachmentPayload,
-      })
-      if (payment.status === "pending") {
-        toast.success("Pago enviado al cliente")
+      if (formMode === "edit" && editingPayment) {
+        const payload: UpdateAdminPaymentPayload = {
+          concept: trimmedConcept,
+          description: form.description.trim() || undefined,
+          amount: editingPayment.status === "draft" ? normalizedAmount : undefined,
+          currency: editingPayment.status === "draft" ? "EUR" : undefined,
+          dueDate: form.dueDate || null,
+          attachment: attachmentPayload,
+        }
+        await updateAdminPayment(editingPayment.id, payload)
+        toast.success("Pago actualizado")
       } else {
-        toast.success("Pago creado, pendiente de envío")
+        const payment = await createAdminPayment({
+          projectId: form.projectId,
+          concept: trimmedConcept,
+          description: form.description.trim() || undefined,
+          amount: normalizedAmount,
+          currency: "EUR",
+          dueDate: form.dueDate || null,
+          attachment: attachmentPayload,
+        })
+        toast.success(
+          payment.status === "pending" ? "Pago enviado al cliente" : "Pago creado, pendiente de envío",
+        )
       }
-      setForm(INITIAL_FORM)
-      setAttachmentFile(null)
-      setAttachmentError(null)
+
+      resetForm()
       setSheetOpen(false)
       await loadPayments()
     } catch (requestError) {
       console.error("Error creating payment", requestError)
       const err = requestError as { response?: { data?: { message?: string } } }
-      const message = err.response?.data?.message ?? "No se pudo crear el pago. Revisa los datos e inténtalo de nuevo."
+      const message =
+        err.response?.data?.message ?? "No se pudo guardar el pago. Revisa los datos e inténtalo de nuevo."
       toast.error(message)
     } finally {
       setSubmitting(false)
     }
   }
+
+  const handleDeletePayment = useCallback(
+    async (payment: AdminPaymentRecord) => {
+      const confirmed = window.confirm(
+        `¿Quieres eliminar la propuesta "${payment.concept}"? Esta acción no se puede deshacer.`,
+      )
+      if (!confirmed) return
+
+      setActionPaymentId(payment.id)
+      try {
+        await deleteAdminPayment(payment.id)
+        toast.success("Pago eliminado")
+        await loadPayments()
+      } catch (requestError) {
+        console.error("Error deleting payment", requestError)
+        const err = requestError as { response?: { data?: { message?: string } } }
+        const message = err.response?.data?.message ?? "No se pudo eliminar el pago. Inténtalo más tarde."
+        toast.error(message)
+      } finally {
+        setActionPaymentId(null)
+      }
+    },
+    [loadPayments],
+  )
 
   return (
     <div className="space-y-6 pb-16">
@@ -244,18 +337,34 @@ export function AdminPaymentsPage() {
           {loading ? "Actualizando" : "Actualizar"}
         </Button>
 
-        <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
+        <Sheet
+          open={sheetOpen}
+          onOpenChange={(nextOpen) => {
+            setSheetOpen(nextOpen)
+            if (!nextOpen) {
+              resetForm()
+            }
+          }}
+        >
           <SheetTrigger asChild>
-            <Button className="inline-flex items-center gap-2 rounded-full bg-[#2F4F4F] px-5 py-2 text-sm text-white shadow-apple" disabled={projects.length === 0}>
+            <Button
+              className="inline-flex items-center gap-2 rounded-full bg-[#2F4F4F] px-5 py-2 text-sm text-white shadow-apple"
+              disabled={projects.length === 0}
+              onClick={openCreateForm}
+            >
               <Plus className="h-4 w-4" />
               Proponer pago
             </Button>
           </SheetTrigger>
           <SheetContent className="w-full max-w-lg border-l border-[#E8E6E0] bg-white/95">
             <SheetHeader>
-              <SheetTitle className="font-heading text-2xl text-[#2F4F4F]">Nuevo pago</SheetTitle>
+              <SheetTitle className="font-heading text-2xl text-[#2F4F4F]">
+                {formMode === "create" ? "Nuevo pago" : "Editar pago"}
+              </SheetTitle>
               <p className="text-sm text-[#6B7280]">
-                Define el concepto, importe y fecha objetivo. Se registrará como borrador hasta que lo conectemos con Stripe.
+                {formMode === "create"
+                  ? "Define el concepto, importe y fecha objetivo."
+                  : "Actualiza la información o añade el documento pendiente."}
               </p>
             </SheetHeader>
             <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-4">
@@ -263,8 +372,9 @@ export function AdminPaymentsPage() {
                 <Label htmlFor="payment-project">Proyecto</Label>
                 <select
                   id="payment-project"
-                  className="w-full rounded-[0.9rem] border border-[#E8E6E0] bg-[#F8F7F4] px-4 py-2 text-sm text-[#2F4F4F] focus:outline-none focus:ring-2 focus:ring-[#2F4F4F]/20"
+                  className="w-full rounded-[0.9rem] border border-[#E8E6E0] bg-[#F8F7F4] px-4 py-2 text-sm text-[#2F4F4F] focus:outline-none focus:ring-2 focus:ring-[#2F4F4F]/20 disabled:cursor-not-allowed"
                   value={form.projectId}
+                  disabled={formMode === "edit"}
                   onChange={(event) => setForm((current) => ({ ...current, projectId: event.target.value }))}
                 >
                   <option value="">Selecciona un proyecto</option>
@@ -275,6 +385,9 @@ export function AdminPaymentsPage() {
                     </option>
                   ))}
                 </select>
+                {formMode === "edit" && editingPayment ? (
+                  <p className="text-xs text-[#6B7280]">Este pago pertenece a {editingPayment.projectName}.</p>
+                ) : null}
               </div>
 
               <div className="space-y-2">
@@ -309,7 +422,11 @@ export function AdminPaymentsPage() {
                     value={form.amount}
                     onChange={(event) => setForm((current) => ({ ...current, amount: event.target.value }))}
                     placeholder="2450"
+                    disabled={formMode === "edit" && editingPayment?.status !== "draft"}
                   />
+                  {formMode === "edit" && editingPayment?.status !== "draft" ? (
+                    <p className="text-xs text-[#9CA3AF]">No puedes cambiar el importe de un pago enviado.</p>
+                  ) : null}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="payment-due">Fecha objetivo</Label>
@@ -339,8 +456,14 @@ export function AdminPaymentsPage() {
             </div>
             <SheetFooter>
               <Button className="w-full rounded-full bg-[#2F4F4F] text-white" disabled={!canSubmit || submitting} onClick={handleSubmit}>
-                {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CreditCard className="mr-2 h-4 w-4" />}
-                {submitting ? "Enviando…" : "Enviar pago"}
+                {submitting ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : formMode === "create" ? (
+                  <CreditCard className="mr-2 h-4 w-4" />
+                ) : (
+                  <Pencil className="mr-2 h-4 w-4" />
+                )}
+                {submitting ? (formMode === "create" ? "Enviando…" : "Guardando…") : formMode === "create" ? "Enviar pago" : "Guardar cambios"}
               </Button>
             </SheetFooter>
           </SheetContent>
@@ -419,8 +542,35 @@ export function AdminPaymentsPage() {
                   <Badge className={STATUS_BADGES[payment.status]}>{STATUS_LABELS[payment.status]}</Badge>
                   <p className="text-lg font-semibold text-[#2F4F4F]">{formatCurrency(payment.amountCents, payment.currency)}</p>
                 </div>
-                <div className="flex items-center justify-end text-xs text-[#9CA3AF]">
-                  ID {payment.id.slice(0, 8).toUpperCase()}
+                <div className="flex flex-col items-end gap-3 text-right">
+                  <p className="text-xs text-[#9CA3AF]">ID {payment.id.slice(0, 8).toUpperCase()}</p>
+                  <div className="flex flex-wrap justify-end gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="rounded-full border-[#E8E6E0] text-[#2F4F4F] hover:bg-[#F8F7F4]"
+                      onClick={() => openEditForm(payment)}
+                    >
+                      <Pencil className="mr-2 h-4 w-4" />
+                      Editar
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="rounded-full border-[#FCA5A5] text-[#B91C1C] hover:bg-[#FEF2F2]"
+                      disabled={actionPaymentId === payment.id}
+                      onClick={() => {
+                        void handleDeletePayment(payment)
+                      }}
+                    >
+                      {actionPaymentId === payment.id ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="mr-2 h-4 w-4" />
+                      )}
+                      Eliminar
+                    </Button>
+                  </div>
                 </div>
               </div>
             ))
