@@ -15,6 +15,8 @@ import type {
   AdminProjectTeamRole,
 } from "@app/types/admin"
 
+const STORAGE_BUCKET = "project-assets"
+
 export const PROJECT_TEAM_ROLES: AdminProjectTeamRole[] = ["director", "arquitecto", "ingeniero", "instalador", "coordinador", "logistica", "otro"]
 
 const PROJECT_STATUS_DEFAULT: AdminProjectStatus = "planificacion"
@@ -526,6 +528,12 @@ function computeWeightProgress(rows: Array<{ weight: number; status: string; pro
 
 export async function getAdminProjectDetail(projectRef: string): Promise<AdminProjectDetails> {
   const supabase = createServerSupabaseClient()
+  const storage = supabase.storage.from(STORAGE_BUCKET)
+  const resolveStorageUrl = (path: string | null | undefined) => {
+    if (!path) return null
+    const { data } = storage.getPublicUrl(path)
+    return data?.publicUrl ?? null
+  }
 
   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(projectRef)
   const projectResult = await supabase
@@ -653,7 +661,7 @@ export async function getAdminProjectDetail(projectRef: string): Promise<AdminPr
       uploadedAt: row.uploaded_at ?? null,
       status: row.status ?? "vigente",
       storagePath: row.storage_path ?? null,
-      url: row.storage_path ? `/storage/${row.storage_path}` : null,
+      url: resolveStorageUrl(row.storage_path ?? null),
       uploadedById: row.uploaded_by ?? null,
       uploadedByName: Array.isArray(row.team_members) ? row.team_members[0]?.full_name ?? null : row.team_members?.full_name ?? null,
       notifyClient: Boolean(row.notify_client),
@@ -662,16 +670,19 @@ export async function getAdminProjectDetail(projectRef: string): Promise<AdminPr
     })) ?? []
 
   const photos: AdminProjectPhoto[] =
-    photosRows.map((row: any) => ({
-      id: row.id,
-      url: row.url,
-      caption: row.caption ?? null,
-      takenAt: row.taken_at ?? null,
-      sortOrder: row.sort_order ?? 0,
-      storagePath: row.storage_path ?? null,
-      tags: Array.isArray(row.tags) ? row.tags : [],
-      isCover: Boolean(row.is_cover),
-    })) ?? []
+    photosRows.map((row: any) => {
+      const publicUrl = row.url ?? resolveStorageUrl(row.storage_path ?? null) ?? ""
+      return {
+        id: row.id,
+        url: publicUrl,
+        caption: row.caption ?? null,
+        takenAt: row.taken_at ?? null,
+        sortOrder: row.sort_order ?? 0,
+        storagePath: row.storage_path ?? null,
+        tags: Array.isArray(row.tags) ? row.tags : [],
+        isCover: Boolean(row.is_cover),
+      }
+    }) ?? []
 
   const timeline: AdminProjectTimelineEvent[] =
     timelineRows.map((row: any) => ({

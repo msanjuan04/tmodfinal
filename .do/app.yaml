@@ -1,0 +1,44 @@
+name: terrazea-clientzone
+region: nyc
+services:
+  - name: api
+    github:
+      repo: terrazeabcn-del/terrazea-clientzone
+      branch: main
+      deploy_on_push: true
+    source_dir: /
+    build_command: npm ci && npm run build
+    run_command: npm run start
+    environment_slug: node-js
+    instance_count: 1
+    instance_size_slug: basic-xxs
+    http_port: 4000
+    routes:
+      - path: /
+    envs:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "4000"
+      - key: SUPABASE_URL
+        scope: RUN_TIME
+        type: SECRET
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        scope: RUN_TIME
+        type: SECRET
+      - key: SESSION_SECRET
+        scope: RUN_TIME
+        type: SECRET
+      - key: CLIENT_APP_URL
+        value: https://terrazea.gnerai.com
+      - key: STRIPE_SECRET_KEY
+        scope: RUN_TIME
+        type: SECRET
+      - key: STRIPE_WEBHOOK_SECRET
+        scope: RUN_TIME
+        type: SECRET
+      - key: SESSION_COOKIE_SECURE
+        value: "true"
+      - key: SESSION_COOKIE_SAME_SITE
+        value: "none"
+

@@ -63,12 +63,12 @@ export function ClientShell({ user, projects, children }: ClientShellProps) {
 
   return (
     <div className="flex min-h-screen bg-[#F4F1EA] text-[#2F4F4F]">
-      <aside className="hidden w-64 flex-col border-r border-[#E8E6E0] bg-white/80 px-6 pb-6 pt-10 shadow-apple-lg lg:flex">
+      <aside className="hidden w-64 flex-col border-r border-[#E8E6E0] bg-white/80 px-6 pb-6 pt-10 shadow-apple-lg lg:flex lg:sticky lg:top-0 lg:h-screen">
         <Link to="/" className="flex items-center text-[#2F4F4F]">
           <TerrazeaBrand subtitle="Portal Cliente" />
         </Link>
-        <p className="mt-3 text-xs text-[#6B7280]">Zona Cliente · protección liquid glass</p>
-        <nav className="mt-10 space-y-1">
+        <p className="mt-3 text-xs text-[#6B7280]">Zona Cliente · seguimiento profesional Terrazea</p>
+        <nav className="mt-10 space-y-1 overflow-y-auto pr-1">
           {NAV_ITEMS.map((item) => {
             const active = location.pathname.startsWith(item.href)
             const Icon = item.icon
@@ -86,7 +86,7 @@ export function ClientShell({ user, projects, children }: ClientShellProps) {
             )
           })}
         </nav>
-        <div className="mt-auto rounded-[1.3rem] border border-[#E8E6E0] bg-[#F8F7F4] p-4 text-sm text-[#4B5563]">
+        <div className="mt-auto rounded-[1.3rem] border border-[#E8E6E0] bg-[#F8F7F4] p-4 text-sm text-[#4B5563] lg:sticky lg:bottom-6">
           <p className="font-semibold text-[#2F4F4F]">Soporte Terrazea</p>
           <p className="mt-1 text-xs">¿Dudas? Escríbenos a hola@terrazea.com</p>
         </div>

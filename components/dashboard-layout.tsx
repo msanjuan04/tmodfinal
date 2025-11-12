@@ -49,7 +49,7 @@ const navigation = [
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const location = useLocation()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-  const { session } = useAuth()
+  const { session, logout } = useAuth()
   const isAdmin = session?.role === "admin" || (session?.email ? isSuperAdminEmail(session.email) : false)
   const sessionEmail = session?.email
   const safeEmail = sessionEmail ? (isSuperAdminEmail(sessionEmail) ? SUPER_ADMIN_PRIMARY_EMAIL : sessionEmail) : SUPER_ADMIN_PRIMARY_EMAIL
@@ -113,7 +113,13 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                   Notificaciones
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem className="text-red-600">
+                <DropdownMenuItem
+                  className="text-red-600"
+                  onSelect={(event) => {
+                    event.preventDefault()
+                    void logout()
+                  }}
+                >
                   <LogOut className="mr-2 h-4 w-4" />
                   Cerrar sesión
                 </DropdownMenuItem>
@@ -191,7 +197,13 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                 Notificaciones
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem className="text-red-600">
+              <DropdownMenuItem
+                className="text-red-600"
+                onSelect={(event) => {
+                  event.preventDefault()
+                  void logout()
+                }}
+              >
                 <LogOut className="mr-2 h-4 w-4" />
                 Cerrar sesión
               </DropdownMenuItem>

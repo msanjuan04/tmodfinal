@@ -126,8 +126,7 @@ export function ClientDashboardPage() {
               Bienvenido de nuevo, {session.name}
             </h1>
             <p className="mt-2 text-sm text-[#6B7280]">
-              Este es el resumen de tu proyecto <strong>{dashboard.project.name}</strong>. Todo está protegido con nuestra
-              capa liquid glass para exteriores premium.
+              Este es el resumen de tu proyecto <strong>{dashboard.project.name}</strong>. Toda la información se presenta con rigor y se actualiza en tiempo real para que tomes decisiones con confianza.
             </p>
           </div>
           <Button

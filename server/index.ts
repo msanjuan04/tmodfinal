@@ -2,6 +2,7 @@ import cookieParser from "cookie-parser"
 import cors from "cors"
 import express from "express"
 import morgan from "morgan"
+import path from "node:path"
 
 import { env } from "./config/env"
 import { authRouter } from "./routes/auth"
@@ -47,6 +48,23 @@ app.use("/api/auth", authRouter)
 app.use("/api/client", clientRouter)
 app.use("/api/admin", adminRouter)
 
+// En producción, servir archivos estáticos del frontend
+if (env.nodeEnv === "production") {
+  const distPath = path.resolve(process.cwd(), "dist")
+  app.use(express.static(distPath))
+  
+  // Todas las rutas que no sean /api/* sirven el index.html (SPA routing)
+  // Esto debe ir ANTES del error handler
+  app.get("*", (request, response, next) => {
+    // No servir index.html para rutas de API
+    if (request.path.startsWith("/api")) {
+      return next()
+    }
+    response.sendFile(path.join(distPath, "index.html"))
+  })
+}
+
+// Error handler debe ir al final
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 app.use((error: Error & { status?: number }, _request: express.Request, response: express.Response, _next: express.NextFunction) => {
   const status = error.status ?? 500
@@ -60,4 +78,7 @@ app.use((error: Error & { status?: number }, _request: express.Request, response
 
 app.listen(env.port, () => {
   console.log(`Terrazea API escuchando en http://localhost:${env.port}`)
+  if (env.nodeEnv === "production") {
+    console.log(`Frontend estático servido desde: ${path.resolve(process.cwd(), "dist")}`)
+  }
 })

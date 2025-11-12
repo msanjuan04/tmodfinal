@@ -16,6 +16,11 @@ export default defineConfig(({ mode }) => {
         "@app": path.resolve(__dirname, "src"),
       },
     },
+    build: {
+      outDir: "dist",
+      emptyOutDir: true,
+      sourcemap: false,
+    },
     server: {
       port: 5173,
       proxy: {
