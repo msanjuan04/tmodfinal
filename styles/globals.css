@@ -128,4 +128,102 @@
   .font-heading {
     font-family: var(--font-heading);
   }
+
+  .terrazea-day-picker {
+    width: 100%;
+    --rdp-cell-size: clamp(44px, calc((100% - 32px) / 7), 68px);
+    background: #f8f7f4;
+    border-radius: 1.5rem;
+    padding: 1.25rem;
+  }
+
+  .terrazea-day-picker .rdp {
+    width: 100%;
+  }
+
+  .terrazea-day-picker .rdp-months,
+  .terrazea-day-picker .rdp-month,
+  .terrazea-day-picker .rdp-table {
+    width: 100%;
+  }
+
+  .terrazea-day-picker .rdp-table {
+    table-layout: fixed;
+  }
+
+  .terrazea-day-picker .rdp-head_row {
+    color: #9ca3af;
+    font-size: 0.85rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  .terrazea-day-picker .rdp-head_cell,
+  .terrazea-day-picker .rdp-day {
+    width: var(--rdp-cell-size);
+    height: var(--rdp-cell-size);
+  }
+
+  .terrazea-day-picker .rdp-nav_button {
+    color: #0d9488;
+    border: 1px solid rgba(13, 148, 136, 0.4);
+    background: white;
+    border-radius: 9999px;
+    width: 36px;
+    height: 36px;
+  }
+
+  .terrazea-day-picker .rdp-nav_button:hover {
+    background: rgba(13, 148, 136, 0.08);
+  }
+
+  .terrazea-day-picker .rdp-day {
+    position: relative;
+    border-radius: 9999px;
+    color: #2f4f4f;
+    font-weight: 500;
+    border: 1px solid transparent;
+    transition-property: background-color, color, box-shadow, border;
+  }
+
+  .terrazea-day-picker .rdp-day:hover:not(.rdp-day_selected, .rdp-day_disabled) {
+    background: rgba(13, 148, 136, 0.08);
+    color: #0d9488;
+  }
+
+  .terrazea-day-picker .rdp-day_outside {
+    color: #d1d5db;
+  }
+
+  .terrazea-day-picker .rdp-day_today:not(.rdp-day_selected) {
+    border: 2px solid rgba(13, 148, 136, 0.4);
+    color: #0d9488;
+    font-weight: 600;
+  }
+
+  .terrazea-day-picker .rdp-day_selected {
+    background-color: #0d9488 !important;
+    color: #f8f7f4 !important;
+    border: 2px solid #0d9488 !important;
+    box-shadow: 0 8px 18px rgba(13, 148, 136, 0.25) !important;
+    font-weight: 700 !important;
+  }
+
+  .terrazea-day-picker .rdp-day_hasEvents::after,
+  .terrazea-day-has-events::after {
+    content: "";
+    position: absolute;
+    bottom: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 6px;
+    height: 6px;
+    border-radius: 9999px;
+    background-color: #0d9488;
+  }
+
+  .terrazea-day-picker .rdp-day_selected.rdp-day_hasEvents::after,
+  .terrazea-day-selected.terrazea-day-has-events::after {
+    background-color: #34d399;
+  }
 }

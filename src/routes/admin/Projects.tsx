@@ -782,14 +782,32 @@ function ProjectFormSheet({ open, onOpenChange, mode, values, setValues, loading
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full overflow-hidden p-0 sm:max-w-xl">
-        <SheetHeader className="border-b border-[#E8E6E0] px-6 py-5">
+      <SheetContent
+        side="center"
+        className="w-full overflow-hidden border-white/50 bg-gradient-to-br from-white/95 via-white/90 to-[#F8F7F4]/95 p-0 sm:max-w-[640px]"
+      >
+        <SheetHeader className="px-8 pb-2 pt-8">
           <SheetTitle className="font-heading text-2xl text-[#2F4F4F]">
             {mode === "create" ? "Nuevo proyecto" : "Editar proyecto"}
           </SheetTitle>
+          <p className="text-sm text-[#6B7280]">
+            Completa los datos clave y comparte el código Terrazea con tu cliente para que siga el progreso.
+          </p>
         </SheetHeader>
-        <ScrollArea className="h-[calc(100vh-9rem)] px-6">
+        <ScrollArea className="h-[calc(95vh-8rem)] px-8">
           <form className="space-y-5 py-6" onSubmit={handleSubmit}>
+            <div className="rounded-[1.5rem] border border-[#E8E6E0]/70 bg-white/80 p-5 shadow-[0_15px_60px_rgba(15,23,42,0.08)]">
+              <p className="text-xs uppercase tracking-[0.35em] text-[#C6B89E]">Código Terrazea</p>
+              <div className="mt-3 flex items-center justify-between gap-3">
+                <div>
+                  <p className="font-heading text-2xl text-[#0D9488]">{values.code || "Se generará automáticamente"}</p>
+                  <p className="text-xs text-[#6B7280]">El cliente podrá entrar con este código en cuanto actives el proyecto.</p>
+                </div>
+                <Badge className="rounded-full bg-[#ECFDF5] px-3 py-1 text-xs font-semibold text-[#0D9488]">
+                  {mode === "create" ? "Nuevo" : "Editando"}
+                </Badge>
+              </div>
+            </div>
             <div className="grid gap-4">
               <div className="space-y-2">
                 <Label className="text-sm text-[#2F4F4F]">Nombre del proyecto</Label>
@@ -888,12 +906,21 @@ function ProjectFormSheet({ open, onOpenChange, mode, values, setValues, loading
                 </div>
               </div>
             </div>
-            <SheetFooter className="border-t border-[#E8E6E0] pt-4">
+            <SheetFooter className="border-t border-white/50 pt-4">
               <div className="flex w-full justify-end gap-2">
-                <Button type="button" variant="outline" className="border-[#E8E6E0]" onClick={() => onOpenChange(false)}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="border-[#E8E6E0] bg-white/70 text-[#2F4F4F] hover:bg-white"
+                  onClick={() => onOpenChange(false)}
+                >
                   Cancelar
                 </Button>
-                <Button type="submit" disabled={loading} className="bg-[#2F4F4F]">
+                <Button
+                  type="submit"
+                  disabled={loading}
+                  className="bg-[#2F4F4F] shadow-[0_15px_35px_rgba(15,23,42,0.25)] hover:bg-[#1F3535]"
+                >
                   {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : mode === "create" ? "Crear proyecto" : "Guardar cambios"}
                 </Button>
               </div>

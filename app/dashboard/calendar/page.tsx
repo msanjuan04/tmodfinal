@@ -55,6 +55,7 @@ export default async function DashboardCalendarPage({ searchParams }: DashboardC
             projectName={projectCalendarData.project.projectName}
             showVisibility
             projectId={projectCalendarData.project.id}
+            projectSlug={projectCalendarData.project.projectSlug}
             showAdminControls
             getEventSecondaryLine={(event) =>
               event.visibility === "internal" ? "Visible solo para el equipo Terrazea" : "Visible para cliente"

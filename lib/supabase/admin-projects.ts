@@ -91,8 +91,37 @@ export interface AdminProjectUpsertInput {
   assignments?: TeamAssignmentsMap
 }
 
-export async function createAdminProjectRecord(payload: AdminProjectUpsertInput): Promise<{ id: string; slug: string }> {
+function randomCodeSegment(length = 4) {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+  let result = ""
+  for (let i = 0; i < length; i += 1) {
+    const index = Math.floor(Math.random() * alphabet.length)
+    result += alphabet[index]
+  }
+  return result
+}
+
+async function generateProjectCode(supabase: ReturnType<typeof createServerSupabaseClient>): Promise<string> {
+  const year = new Date().getFullYear()
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const candidate = `TRZ-${year}-${randomCodeSegment(4)}`
+    const { data, error } = await supabase.from("projects").select("id").eq("code", candidate).maybeSingle()
+    if (!error && !data) {
+      return candidate
+    }
+    if (error && error.code !== "PGRST116") {
+      throw error
+    }
+  }
+  throw new Error("No se pudo generar un código único para el proyecto.")
+}
+
+export async function createAdminProjectRecord(
+  payload: AdminProjectUpsertInput,
+): Promise<{ id: string; slug: string; code: string }> {
   const supabase = createServerSupabaseClient()
+  const codeToUse =
+    payload.code && payload.code.trim().length > 0 ? payload.code.trim() : await generateProjectCode(supabase)
 
   const baseSlug = slugify(payload.slug && payload.slug.length > 0 ? payload.slug : payload.name)
   let candidateSlug = baseSlug
@@ -105,7 +134,7 @@ export async function createAdminProjectRecord(payload: AdminProjectUpsertInput)
         client_id: payload.clientId,
         name: payload.name.trim(),
         slug: candidateSlug,
-        code: payload.code ?? null,
+        code: codeToUse,
         status: payload.status ?? PROJECT_STATUS_DEFAULT,
         start_date: payload.startDate ?? null,
         estimated_delivery: payload.estimatedDelivery ?? null,
@@ -122,7 +151,7 @@ export async function createAdminProjectRecord(payload: AdminProjectUpsertInput)
         const managerAssignments: TeamAssignmentsMap = { director: payload.managerId }
         await assignProjectTeamRoles(data.id, managerAssignments)
       }
-      return { id: data.id, slug: data.slug }
+      return { id: data.id, slug: data.slug, code: codeToUse }
     }
 
     if (error?.code === "23505") {
@@ -200,7 +229,7 @@ export async function deleteAdminProjectRecord(projectId: string): Promise<void>
   if (error) throw error
 }
 
-export async function duplicateAdminProject(projectId: string): Promise<{ id: string; slug: string }> {
+export async function duplicateAdminProject(projectId: string): Promise<{ id: string; slug: string; code: string }> {
   const supabase = createServerSupabaseClient()
   const { data: project, error } = await supabase
     .from("projects")
@@ -230,7 +259,6 @@ export async function duplicateAdminProject(projectId: string): Promise<{ id: st
     name: copyName,
     slug: copySlug,
     clientId: project.client_id,
-    code: project.code,
     status: "borrador",
     startDate: project.start_date ?? null,
     estimatedDelivery: project.estimated_delivery ?? null,

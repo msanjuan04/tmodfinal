@@ -169,7 +169,7 @@ export function AdminPaymentsPage() {
         }
       }
 
-      await createAdminPayment({
+      const payment = await createAdminPayment({
         projectId: form.projectId,
         concept: form.concept.trim(),
         description: form.description.trim() || undefined,
@@ -178,7 +178,11 @@ export function AdminPaymentsPage() {
         dueDate: form.dueDate || null,
         attachment: attachmentPayload,
       })
-      toast.success("Pago creado como borrador")
+      if (payment.status === "pending") {
+        toast.success("Pago enviado al cliente")
+      } else {
+        toast.success("Pago creado, pendiente de envío")
+      }
       setForm(INITIAL_FORM)
       setAttachmentFile(null)
       setAttachmentError(null)
@@ -186,7 +190,9 @@ export function AdminPaymentsPage() {
       await loadPayments()
     } catch (requestError) {
       console.error("Error creating payment", requestError)
-      toast.error("No se pudo crear el pago. Revisa los datos e inténtalo de nuevo.")
+      const err = requestError as { response?: { data?: { message?: string } } }
+      const message = err.response?.data?.message ?? "No se pudo crear el pago. Revisa los datos e inténtalo de nuevo."
+      toast.error(message)
     } finally {
       setSubmitting(false)
     }
@@ -334,7 +340,7 @@ export function AdminPaymentsPage() {
             <SheetFooter>
               <Button className="w-full rounded-full bg-[#2F4F4F] text-white" disabled={!canSubmit || submitting} onClick={handleSubmit}>
                 {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CreditCard className="mr-2 h-4 w-4" />}
-                Guardar como borrador
+                {submitting ? "Enviando…" : "Enviar pago"}
               </Button>
             </SheetFooter>
           </SheetContent>

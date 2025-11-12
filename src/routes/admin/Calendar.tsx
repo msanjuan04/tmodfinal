@@ -182,6 +182,7 @@ export function AdminCalendarPage() {
         projectName={activeSlug ? activeProjectName : undefined}
         showVisibility
         projectId={activeProjectId}
+        projectSlug={activeSlug ?? undefined}
         showAdminControls={Boolean(activeProjectId)}
         getEventSecondaryLine={(event) =>
           event.project ? <span className="font-medium text-[#2F4F4F]">{event.project.name}</span> : ""

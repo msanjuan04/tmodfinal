@@ -2,6 +2,7 @@ import { Buffer } from "node:buffer"
 import { Router } from "express"
 import { z } from "zod"
 import type { SupabaseClient } from "@supabase/supabase-js"
+import bcrypt from "bcryptjs"
 
 import { getAdminClientsOverview } from "../../lib/supabase/admin-data"
 import { createClientDocumentRecord } from "../../lib/supabase/admin-clients"
@@ -65,8 +66,18 @@ import { isProjectTaskStatus } from "../../types/project-tasks"
 import { createProjectPayment, getAdminPaymentById, listAdminPayments } from "../../lib/supabase/admin-payments"
 import { ensureStripeCustomer, createCheckoutSessionForPayment } from "../../lib/payments/stripe"
 import { env } from "../config/env"
+import type { AdminPaymentRecord } from "@app/types/admin"
 
 type ProjectTeamRole = (typeof PROJECT_TEAM_ROLES)[number]
+
+class PaymentSendError extends Error {
+  statusCode: number
+  constructor(message: string, statusCode = 500) {
+    super(message)
+    this.name = "PaymentSendError"
+    this.statusCode = statusCode
+  }
+}
 
 const createClientSchema = z.object({
   fullName: z.string().min(3).max(120),
@@ -206,6 +217,157 @@ const createPaymentSchema = z.object({
 })
 
 const STORAGE_BUCKET = "project-assets"
+
+async function ensureClientAppUser(
+  supabase: SupabaseClient,
+  clientId: string,
+  options: { projectCode: string },
+) {
+  try {
+    const { data: client, error: clientError } = await supabase
+      .from("clients")
+      .select("id, full_name, email")
+      .eq("id", clientId)
+      .maybeSingle()
+
+    if (clientError) {
+      console.error("No se pudo obtener el cliente para crear usuario", clientError)
+      return
+    }
+
+    if (!client || !client.email) {
+      return
+    }
+
+    const email = client.email.trim().toLowerCase()
+    const fullName = client.full_name?.trim() ?? "Cliente Terrazea"
+
+    const { data: existingUser, error: userError } = await supabase
+      .from("app_users")
+      .select("id, is_active")
+      .eq("email", email)
+      .maybeSingle()
+
+    if (userError) {
+      console.error("No se pudo comprobar el usuario del cliente", userError)
+      return
+    }
+
+    if (!existingUser) {
+      const passwordHash = await bcrypt.hash(options.projectCode, 10)
+      const { error: insertError } = await supabase.from("app_users").insert({
+        email,
+        full_name: fullName,
+        password_hash: passwordHash,
+        role: "client",
+        is_active: true,
+      })
+
+      if (insertError) {
+        console.error("No se pudo crear el usuario del cliente", insertError)
+      }
+      return
+    }
+
+    if (!existingUser.is_active) {
+      const { error: updateError } = await supabase
+        .from("app_users")
+        .update({ is_active: true, full_name: fullName })
+        .eq("id", existingUser.id)
+      if (updateError) {
+        console.error("No se pudo reactivar el usuario del cliente", updateError)
+      }
+    }
+  } catch (error) {
+    console.error("No se pudo asegurar el usuario del cliente", error)
+  }
+}
+
+async function sendDraftPayment(payment: AdminPaymentRecord): Promise<AdminPaymentRecord> {
+  if (payment.status !== "draft") {
+    return payment
+  }
+
+  if (!env.stripeSecretKey || !env.stripeSecretKey.startsWith("sk_")) {
+    throw new PaymentSendError(
+      "Stripe no está configurado. Configura STRIPE_SECRET_KEY para poder enviar pagos automáticamente.",
+      503,
+    )
+  }
+
+  const supabase = createServerSupabaseClient()
+  const { data: client, error: clientError } = await supabase
+    .from("clients")
+    .select("id, full_name, email, stripe_customer_id")
+    .eq("id", payment.clientId)
+    .maybeSingle()
+
+  if (clientError) {
+    throw new PaymentSendError("No se pudo obtener el cliente asociado al pago.", 500)
+  }
+
+  if (!client) {
+    throw new PaymentSendError("Cliente asociado no encontrado.", 404)
+  }
+
+  if (!client.email) {
+    throw new PaymentSendError("El cliente no tiene un correo electrónico configurado para Stripe.", 400)
+  }
+
+  try {
+    const stripeCustomerId = await ensureStripeCustomer({
+      id: client.id,
+      fullName: client.full_name ?? payment.clientName ?? "Cliente Terrazea",
+      email: client.email,
+      stripeCustomerId: client.stripe_customer_id ?? payment.clientStripeCustomerId ?? payment.stripeCustomerId ?? null,
+    })
+
+    const clientAppBase = env.clientAppUrl.replace(/\/$/, "")
+    const checkoutSession = await createCheckoutSessionForPayment({
+      payment,
+      customerId: stripeCustomerId,
+      successUrl: `${clientAppBase}/client/payments?status=success`,
+      cancelUrl: `${clientAppBase}/client/payments?status=cancel`,
+    })
+
+    const paymentIntentId =
+      typeof checkoutSession.payment_intent === "string"
+        ? checkoutSession.payment_intent
+        : checkoutSession.payment_intent?.id ?? null
+
+    const invoiceId = typeof checkoutSession.invoice === "string" ? checkoutSession.invoice : null
+
+    const { error: updateError } = await supabase
+      .from("project_payments")
+      .update({
+        status: "pending",
+        sent_at: new Date().toISOString(),
+        payment_link: checkoutSession.url,
+        stripe_payment_intent_id: paymentIntentId,
+        stripe_invoice_id: invoiceId,
+        stripe_customer_id: stripeCustomerId,
+        stripe_checkout_session_id: checkoutSession.id,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", payment.id)
+
+    if (updateError) {
+      throw updateError
+    }
+
+    const updated = await getAdminPaymentById(payment.id)
+    if (!updated) {
+      throw new PaymentSendError("No se pudo recuperar el pago enviado.", 500)
+    }
+    return updated
+  } catch (error) {
+    if (error instanceof PaymentSendError) {
+      throw error
+    }
+    console.error("Error enviando pago", error)
+    throw new PaymentSendError("No pudimos generar el enlace de pago. Inténtalo de nuevo más tarde.", 502)
+  }
+}
 
 async function ensureStorageBucketExists(supabase: SupabaseClient) {
   const { data: bucket, error } = await supabase.storage.getBucket(STORAGE_BUCKET)
@@ -710,7 +872,17 @@ router.post(
         createdBy: session.userId,
         proposalDocumentId,
       })
-      response.status(201).json({ payment })
+      let sentPayment = payment
+      try {
+        sentPayment = await sendDraftPayment(payment)
+      } catch (error) {
+        if (error instanceof PaymentSendError) {
+          console.warn("No se pudo enviar el pago automáticamente:", error.message)
+        } else {
+          console.error("No se pudo enviar el pago automáticamente", error)
+        }
+      }
+      response.status(201).json({ payment: sentPayment })
     } catch (error) {
       if (isMissingRelationError(error, "project_payments")) {
         response.status(500).json({ message: SCHEMA_HINT })
@@ -738,77 +910,20 @@ router.post(
     }
 
     if (payment.status !== "draft") {
-      response.status(400).json({ message: "Solo puedes enviar pagos en estado borrador." })
+      response.json({ payment })
       return
     }
 
-    const supabase = createServerSupabaseClient()
-    const { data: client, error: clientError } = await supabase
-      .from("clients")
-      .select("id, full_name, email, stripe_customer_id")
-      .eq("id", payment.clientId)
-      .maybeSingle()
-
-    if (clientError) {
-      if (isMissingRelationError(clientError, "clients")) {
-        response.status(500).json({ message: SCHEMA_HINT })
+    try {
+      const updated = await sendDraftPayment(payment)
+      response.json({ payment: updated })
+    } catch (error) {
+      if (error instanceof PaymentSendError) {
+        response.status(error.statusCode).json({ message: error.message, payment })
         return
       }
-      throw clientError
+      throw error
     }
-
-    if (!client) {
-      response.status(404).json({ message: "Cliente asociado no encontrado." })
-      return
-    }
-
-    if (!client.email) {
-      response.status(400).json({ message: "El cliente no tiene un correo electrónico configurado para Stripe." })
-      return
-    }
-
-    const stripeCustomerId = await ensureStripeCustomer({
-      id: client.id,
-      fullName: client.full_name ?? payment.clientName ?? "Cliente Terrazea",
-      email: client.email,
-      stripeCustomerId: client.stripe_customer_id ?? payment.clientStripeCustomerId ?? payment.stripeCustomerId ?? null,
-    })
-
-    const clientAppBase = env.clientAppUrl.replace(/\/$/, "")
-    const checkoutSession = await createCheckoutSessionForPayment({
-      payment,
-      customerId: stripeCustomerId,
-      successUrl: `${clientAppBase}/client/payments?status=success`,
-      cancelUrl: `${clientAppBase}/client/payments?status=cancel`,
-    })
-
-    const paymentIntentId =
-      typeof checkoutSession.payment_intent === "string"
-        ? checkoutSession.payment_intent
-        : checkoutSession.payment_intent?.id ?? null
-
-    const invoiceId = typeof checkoutSession.invoice === "string" ? checkoutSession.invoice : null
-
-    const { error: updateError } = await supabase
-      .from("project_payments")
-      .update({
-        status: "pending",
-        sent_at: new Date().toISOString(),
-        payment_link: checkoutSession.url,
-        stripe_payment_intent_id: paymentIntentId,
-        stripe_invoice_id: invoiceId,
-        stripe_customer_id: stripeCustomerId,
-        stripe_checkout_session_id: checkoutSession.id,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", payment.id)
-
-    if (updateError) {
-      throw updateError
-    }
-
-    const updated = await getAdminPaymentById(payment.id)
-    response.json({ payment: updated })
   }),
 )
 
@@ -927,6 +1042,8 @@ router.post(
         managerId: data.managerId ?? null,
         assignments,
       })
+
+      await ensureClientAppUser(supabase, clientId, { projectCode: project.code })
 
       response.status(201).json({ message: "Proyecto creado", project })
     } catch (error) {
