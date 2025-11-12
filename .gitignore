@@ -6,3 +6,5 @@ dist-server/
 .next/
 *.log
 .DS_Store
+*.zip
+build-*.zip
