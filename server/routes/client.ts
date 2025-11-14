@@ -1,6 +1,7 @@
 import { Router } from "express"
 import { z } from "zod"
 
+import { env } from "../config/env"
 import { getClientProjectBySlug, getClientProjects } from "../../lib/supabase/client-data"
 import { getClientProjectEvents } from "../../lib/supabase/project-events"
 import { listClientPayments } from "../../lib/supabase/client-payments"
@@ -12,6 +13,9 @@ import {
   getProjectGallery,
   sendClientConversationMessage,
 } from "../../lib/supabase/queries"
+import { getAdminPaymentById } from "../../lib/supabase/admin-payments"
+import { createServerSupabaseClient } from "../../lib/supabase/server"
+import { ensureStripeCustomer, createCheckoutSessionForPayment } from "../../lib/payments/stripe"
 import { requireSession } from "../services/session"
 import { asyncHandler } from "../utils/async-handler"
 
@@ -212,6 +216,89 @@ router.get(
     const result = await listClientPayments(session.clientId, projectSlug)
 
     response.json(result)
+  }),
+)
+
+router.post(
+  "/payments/:paymentId/checkout",
+  asyncHandler(async (request, response) => {
+    const session = requireSession(request)
+
+    if (!session.clientId) {
+      response.status(403).json({ message: "No tienes proyectos asociados" })
+      return
+    }
+
+    const paymentId = request.params.paymentId
+    if (!paymentId) {
+      response.status(400).json({ message: "Pago no especificado" })
+      return
+    }
+
+    const payment = await getAdminPaymentById(paymentId)
+    if (!payment || payment.clientId !== session.clientId) {
+      response.status(404).json({ message: "Pago no encontrado" })
+      return
+    }
+
+    if (payment.status !== "pending") {
+      response.status(400).json({ message: "Este pago no está disponible para realizar el cobro." })
+      return
+    }
+
+    if (!payment.clientEmail) {
+      response.status(400).json({ message: "No hay un correo asociado para este pago." })
+      return
+    }
+
+    const stripeEnabled = Boolean(env.stripeSecretKey && env.stripeSecretKey.startsWith("sk_"))
+    if (!stripeEnabled) {
+      response.status(503).json({ message: "El pago no está disponible en este momento." })
+      return
+    }
+
+    const supabase = createServerSupabaseClient()
+
+    const stripeCustomerId = await ensureStripeCustomer({
+      id: payment.clientId,
+      fullName: payment.clientName ?? "Cliente Terrazea",
+      email: payment.clientEmail,
+      stripeCustomerId: payment.clientStripeCustomerId ?? payment.stripeCustomerId ?? null,
+    })
+
+    const clientAppBase = (env.clientAppUrl ?? "http://localhost:5173").replace(/\/$/, "")
+
+    const checkoutSession = await createCheckoutSessionForPayment({
+      payment,
+      customerId: stripeCustomerId,
+      successUrl: `${clientAppBase}/client/payments?status=success`,
+      cancelUrl: `${clientAppBase}/client/payments?status=cancel`,
+    })
+
+    const paymentIntentId =
+      typeof checkoutSession.payment_intent === "string"
+        ? checkoutSession.payment_intent
+        : checkoutSession.payment_intent?.id ?? null
+
+    const invoiceId = typeof checkoutSession.invoice === "string" ? checkoutSession.invoice : null
+
+    const { error: updateError } = await supabase
+      .from("project_payments")
+      .update({
+        payment_link: checkoutSession.url,
+        stripe_payment_intent_id: paymentIntentId,
+        stripe_invoice_id: invoiceId,
+        stripe_customer_id: stripeCustomerId,
+        stripe_checkout_session_id: checkoutSession.id,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", payment.id)
+
+    if (updateError) {
+      throw updateError
+    }
+
+    response.json({ url: checkoutSession.url })
   }),
 )
 

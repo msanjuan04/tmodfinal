@@ -3,11 +3,13 @@ import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import { AlertCircle, CreditCard, ExternalLink, Loader2, RefreshCw } from "lucide-react"
 
-import { fetchClientPayments } from "@app/lib/api/client"
+import { fetchClientPayments, createClientPaymentCheckout } from "@app/lib/api/client"
 import type { ClientPaymentRecord, ClientPaymentsSummary } from "@app/lib/api/client"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { isStripeCheckoutUrl } from "@app/lib/payments"
+import { toast } from "sonner"
 
 const STATUS_LABELS: Record<ClientPaymentRecord["status"], string> = {
   draft: "Borrador",
@@ -45,6 +47,7 @@ export function ClientPaymentsPage() {
   const [summary, setSummary] = useState<ClientPaymentsSummary | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [checkoutPaymentId, setCheckoutPaymentId] = useState<string | null>(null)
 
   const loadPayments = useCallback(async () => {
     try {
@@ -64,6 +67,34 @@ export function ClientPaymentsPage() {
   useEffect(() => {
     void loadPayments()
   }, [loadPayments])
+
+  const handleCheckout = useCallback(
+    async (payment: ClientPaymentRecord) => {
+      try {
+        setCheckoutPaymentId(payment.id)
+        if (isStripeCheckoutUrl(payment.paymentLink)) {
+          window.open(payment.paymentLink, "_blank", "noopener,noreferrer")
+          return
+        }
+        const { url } = await createClientPaymentCheckout(payment.id)
+        setPayments((current) =>
+          current.map((currentPayment) =>
+            currentPayment.id === payment.id ? { ...currentPayment, paymentLink: url } : currentPayment,
+          ),
+        )
+        window.open(url, "_blank", "noopener,noreferrer")
+      } catch (checkoutError) {
+        console.error("Error creando checkout", checkoutError)
+        const message =
+          (checkoutError as { response?: { data?: { message?: string } } }).response?.data?.message ??
+          "No pudimos generar el enlace de pago. Inténtalo de nuevo."
+        toast.error(message)
+      } finally {
+        setCheckoutPaymentId(null)
+      }
+    },
+    [],
+  )
 
   const pendingAmount = useMemo(() => {
     if (!summary) return "—"
@@ -156,22 +187,32 @@ export function ClientPaymentsPage() {
                   </p>
                 </div>
                 <div className="flex flex-col gap-2 text-sm text-[#4B5563] md:text-right">
-                  {payment.status === "pending" && payment.paymentLink ? (
+                  {payment.status === "pending" ? (
                     <Button
-                      asChild
                       className="inline-flex items-center gap-2 rounded-full bg-[#0D9488] px-4 py-2 text-white shadow-apple-md hover:bg-[#0B766C]"
+                      onClick={() => {
+                        void handleCheckout(payment)
+                      }}
+                      disabled={checkoutPaymentId === payment.id}
                     >
-                      <a href={payment.paymentLink} target="_blank" rel="noreferrer">
-                        <CreditCard className="h-4 w-4" />
-                        Pagar ahora
-                      </a>
+                      {checkoutPaymentId === payment.id ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Preparando pago...
+                        </>
+                      ) : (
+                        <>
+                          <CreditCard className="h-4 w-4" />
+                          Pagar ahora
+                        </>
+                      )}
                     </Button>
                   ) : payment.status === "paid" ? (
                     <span className="rounded-full bg-[#DCFCE7] px-3 py-1 text-xs font-semibold text-[#047857]">
                       Pagado
                     </span>
                   ) : null}
-                  {payment.paymentLink && payment.status === "pending" ? (
+                  {payment.status === "pending" && isStripeCheckoutUrl(payment.paymentLink) ? (
                     <a
                       href={payment.paymentLink}
                       target="_blank"

@@ -1,4 +1,5 @@
 import type React from "react"
+import Script from "next/script"
 import { Inter, Montserrat } from "next/font/google"
 import "./globals.css"
 import { TERRAZEA_BRAND_ICON_URL } from "@/lib/constants/brand"
@@ -45,6 +46,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="es" className={`${inter.variable} ${montserrat.variable}`}>
       <body className="font-body antialiased" suppressHydrationWarning>
+        <Script id="clarity" strategy="afterInteractive">
+          {`
+            (function(c,l,a,r,i,t,y){
+              c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};
+              t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;
+              y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
+            })(window, document, "clarity", "script", "u5y283qfth");
+          `}
+        </Script>
         {children}
       </body>
     </html>

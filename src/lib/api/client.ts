@@ -128,3 +128,12 @@ export async function fetchClientPayments(projectSlug?: string): Promise<ClientP
   })
   return response.data
 }
+
+interface ClientCheckoutResponse {
+  url: string
+}
+
+export async function createClientPaymentCheckout(paymentId: string): Promise<ClientCheckoutResponse> {
+  const response = await api.post<ClientCheckoutResponse>(`/client/payments/${paymentId}/checkout`)
+  return response.data
+}

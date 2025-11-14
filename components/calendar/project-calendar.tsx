@@ -24,6 +24,7 @@ interface ProjectCalendarProps {
   assistantProjectUrl?: string
   onAssistantOpenProject?: (projectId?: string) => void
   onAssistantCreateTask?: (projectId?: string) => void
+  showAssistant?: boolean
 }
 
 function safeParseISO(value: string) {
@@ -73,6 +74,7 @@ export function ProjectCalendar({
   assistantProjectUrl,
   onAssistantOpenProject,
   onAssistantCreateTask,
+  showAssistant = true,
 }: ProjectCalendarProps) {
   const eventsByDate = useMemo(() => {
     const grouped = new Map<string, ProjectEvent[]>()
@@ -390,7 +392,8 @@ export function ProjectCalendar({
         </div>
       </div>
 
-      <div className="rounded-[1.75rem] border border-[#E8E6E0] bg-white p-6 shadow-apple-lg">
+      {showAssistant ? (
+        <div className="rounded-[1.75rem] border border-[#E8E6E0] bg-white p-6 shadow-apple-lg">
           <div className="flex items-start justify-between gap-4">
             <div>
               <h3 className="font-heading text-lg font-semibold text-[#2F4F4F]">Asistente Terra</h3>
@@ -478,6 +481,7 @@ export function ProjectCalendar({
             </div>
           ) : null}
         </div>
+      ) : null}
 
       <div className="rounded-[1.75rem] border border-[#E8E6E0] bg-white p-6 shadow-apple-lg">
         <div className="flex items-center justify-between gap-4">

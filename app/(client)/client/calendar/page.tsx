@@ -41,6 +41,7 @@ export default async function ClientCalendarPage({ searchParams }: ClientCalenda
         events={events}
         projectName={project.projectName}
         getUpcomingSecondaryLine={(event) => event.eventType}
+        showAssistant={false}
       />
     </div>
   )

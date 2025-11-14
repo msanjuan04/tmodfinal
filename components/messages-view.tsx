@@ -22,6 +22,7 @@ interface MessagesViewProps {
   onSendMessage?: (conversationId: string, content: string) => Promise<void>
   viewerType?: "client" | "team_member"
   clientName?: string | null
+  hideConversationList?: boolean
 }
 
 export function MessagesView({
@@ -32,6 +33,7 @@ export function MessagesView({
   onSendMessage,
   viewerType = "client",
   clientName,
+  hideConversationList = false,
 }: MessagesViewProps) {
   const isAdminView = viewerType === "team_member"
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(
@@ -41,6 +43,7 @@ export function MessagesView({
   const [sending, setSending] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
   const messagesEndRef = useRef<HTMLDivElement | null>(null)
+  const showConversationSidebar = !hideConversationList
 
   useEffect(() => {
     if (initialConversationId && initialConversationId !== selectedConversationId) {
@@ -126,84 +129,119 @@ export function MessagesView({
         </header>
       ) : null}
 
-      <section className="grid gap-6 lg:grid-cols-[360px,1fr]">
-        <Card className="border-[#e4dfd5] bg-white/90 shadow-sm">
-          <CardHeader className="flex flex-col gap-4 border-b border-[#f1eee7] pb-5">
-            <div>
-              <CardTitle className="text-lg text-[#1f2a2a]">Conversaciones</CardTitle>
-              <CardDescription className="text-sm text-[#6b7280]">
-                Mantén todo organizado y encuentra chats al instante.
-              </CardDescription>
-            </div>
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#9ca3af]" />
-              <Input
-                placeholder="Buscar nombre o rol"
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-                className="w-full rounded-full border-[#e8e6e0] bg-[#f4f3ef] pl-11 text-sm text-[#2f4f4f] focus:border-[#1f3535] focus:ring-[#1f3535]/20"
-                aria-label="Buscar conversación"
-              />
-            </div>
-          </CardHeader>
-          <CardContent className="p-0">
-            <ScrollArea className="h-[640px]">
-              <div className="space-y-1 p-3">
-                {filteredConversations.map((conversation) => (
-                  <button
-                    key={conversation.id}
-                    onClick={() => setSelectedConversationId(conversation.id)}
-                    className={`group relative flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition ${
-                      selectedConversation?.id === conversation.id
-                        ? "bg-[#d9fdd3]"
-                        : "bg-transparent hover:bg-[#f5f6f6]"
-                    }`}
-                  >
-                    <div className="relative flex-shrink-0 self-start">
-                      <Avatar className="h-10 w-10 border border-[#e3ddd2]">
-                        <AvatarImage src={conversation.avatarUrl || "/placeholder.svg?height=40&width=40"} />
-                        <AvatarFallback className="bg-[#c6b89e] text-[#2f4f4f]">
-                          {conversation.name.charAt(0)}
-                        </AvatarFallback>
-                      </Avatar>
-                      {conversation.status === "online" && (
-                        <span className="absolute -bottom-1 -right-1 h-3 w-3 rounded-full border-2 border-white bg-[#25d366]" />
-                      )}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-medium text-[#111b21]">{conversation.name}</p>
-                          <p className="truncate text-xs uppercase tracking-[0.3em] text-[#94a3b8]">{conversation.role}</p>
-                        </div>
-                        <span className="text-xs text-[#8696a0]">
-                          {formatConversationTime(conversation.lastMessageAt)}
-                        </span>
-                      </div>
-                      <div className="mt-1 flex items-center justify-between gap-2">
-                        <p className="truncate text-xs text-[#62757f]">
-                          {conversation.lastMessagePreview ?? "Sin mensajes recientes"}
-                        </p>
-                        {conversation.unreadCount > 0 && (
-                          <Badge className="h-5 min-w-[20px] rounded-full bg-[#1f3535] px-2 text-xs text-white">
-                            {conversation.unreadCount}
-                          </Badge>
+      <section className={showConversationSidebar ? "grid gap-6 lg:grid-cols-[360px,1fr]" : "space-y-6"}>
+        {showConversationSidebar ? (
+          <Card className="border-[#e4dfd5] bg-white/90 shadow-sm">
+            <CardHeader className="flex flex-col gap-4 border-b border-[#f1eee7] pb-5">
+              <div>
+                <CardTitle className="text-lg text-[#1f2a2a]">Conversaciones</CardTitle>
+                <CardDescription className="text-sm text-[#6b7280]">
+                  Mantén todo organizado y encuentra chats al instante.
+                </CardDescription>
+              </div>
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#9ca3af]" />
+                <Input
+                  placeholder="Buscar nombre o rol"
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  className="w-full rounded-full border-[#e8e6e0] bg-[#f4f3ef] pl-11 text-sm text-[#2f4f4f] focus:border-[#1f3535] focus:ring-[#1f3535]/20"
+                  aria-label="Buscar conversación"
+                />
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              <ScrollArea className="h-[640px]">
+                <div className="space-y-1 p-3">
+                  {filteredConversations.map((conversation) => (
+                    <button
+                      key={conversation.id}
+                      onClick={() => setSelectedConversationId(conversation.id)}
+                      className={`group relative flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition ${
+                        selectedConversation?.id === conversation.id
+                          ? "bg-[#d9fdd3]"
+                          : "bg-transparent hover:bg-[#f5f6f6]"
+                      }`}
+                    >
+                      <div className="relative flex-shrink-0 self-start">
+                        <Avatar className="h-10 w-10 border border-[#e3ddd2]">
+                          <AvatarImage src={conversation.avatarUrl || "/placeholder.svg?height=40&width=40"} />
+                          <AvatarFallback className="bg-[#c6b89e] text-[#2f4f4f]">
+                            {conversation.name.charAt(0)}
+                          </AvatarFallback>
+                        </Avatar>
+                        {conversation.status === "online" && (
+                          <span className="absolute -bottom-1 -right-1 h-3 w-3 rounded-full border-2 border-white bg-[#25d366]" />
                         )}
                       </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium text-[#111b21]">{conversation.name}</p>
+                            <p className="truncate text-xs uppercase tracking-[0.3em] text-[#94a3b8]">
+                              {conversation.role}
+                            </p>
+                          </div>
+                          <span className="text-xs text-[#8696a0]">
+                            {formatConversationTime(conversation.lastMessageAt)}
+                          </span>
+                        </div>
+                        <div className="mt-1 flex items-center justify-between gap-2">
+                          <p className="truncate text-xs text-[#62757f]">
+                            {conversation.lastMessagePreview ?? "Sin mensajes recientes"}
+                          </p>
+                          {conversation.unreadCount > 0 && (
+                            <Badge className="h-5 min-w-[20px] rounded-full bg-[#1f3535] px-2 text-xs text-white">
+                              {conversation.unreadCount}
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                  {filteredConversations.length === 0 && (
+                    <div className="rounded-[1.25rem] border border-dashed border-[#E8E6E0] bg-[#F8F7F4] p-6 text-center text-sm text-[#6B7280]">
+                      {searchQuery.trim().length > 0
+                        ? "No encontramos coincidencias. Prueba con otro nombre o rol."
+                        : "Aún no tienes conversaciones activas. Cuando crees una, aparecerá aquí."}
                     </div>
-                  </button>
-                ))}
-                {filteredConversations.length === 0 && (
-                  <div className="rounded-[1.25rem] border border-dashed border-[#E8E6E0] bg-[#F8F7F4] p-6 text-center text-sm text-[#6B7280]">
-                    {searchQuery.trim().length > 0
-                      ? "No encontramos coincidencias. Prueba con otro nombre o rol."
-                      : "Aún no tienes conversaciones activas. Cuando crees una, aparecerá aquí."}
-                  </div>
+                  )}
+                </div>
+              </ScrollArea>
+            </CardContent>
+          </Card>
+        ) : selectedConversation ? (
+          <Card className="border-[#e4dfd5] bg-white/80 shadow-sm">
+            <CardHeader className="pb-4">
+              <CardTitle className="text-lg text-[#1f2a2a]">Tu contacto asignado</CardTitle>
+              <CardDescription className="text-sm text-[#6b7280]">
+                Siempre hablarás con la misma persona para que no tengas que repetir información.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex items-center gap-4">
+              <div className="relative">
+                <Avatar className="h-16 w-16 border border-[#e3ddd2]">
+                  <AvatarImage src={selectedConversation.avatarUrl || "/placeholder.svg?height=64&width=64"} />
+                  <AvatarFallback className="bg-[#c6b89e] text-[#2f4f4f] text-xl">
+                    {selectedConversation.name.charAt(0)}
+                  </AvatarFallback>
+                </Avatar>
+                {selectedConversation.status === "online" && (
+                  <span className="absolute -bottom-1 -right-1 h-3 w-3 rounded-full border-2 border-white bg-[#25d366]" />
                 )}
               </div>
-            </ScrollArea>
-          </CardContent>
-        </Card>
+              <div className="space-y-1 text-sm text-[#4b5563]">
+                <p className="text-base font-semibold text-[#1f2a2a]">{selectedConversation.name}</p>
+                {selectedConversation.role ? (
+                  <p className="text-xs uppercase tracking-[0.3em] text-[#94a3b8]">{selectedConversation.role}</p>
+                ) : null}
+                <p className="text-xs text-[#6b7280]">
+                  Último mensaje: {formatConversationTime(selectedConversation.lastMessageAt)}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        ) : null}
 
         <Card className="border-[#e4dfd5] bg-white/95 shadow-sm">
           {selectedConversation ? (

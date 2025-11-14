@@ -1,10 +1,18 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
+import { Loader2 } from "lucide-react"
+import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { fetchClientPayments, type ClientPaymentRecord, type ClientPaymentsSummary } from "@/src/lib/api/client"
+import {
+  createClientPaymentCheckout,
+  fetchClientPayments,
+  type ClientPaymentRecord,
+  type ClientPaymentsSummary,
+} from "@/src/lib/api/client"
+import { isStripeCheckoutUrl } from "@/src/lib/payments"
 
 interface PaymentsViewProps {
   projectSlug?: string | null
@@ -58,13 +66,14 @@ export function PaymentsView({ projectSlug }: PaymentsViewProps = {}) {
   const [summary, setSummary] = useState<ClientPaymentsSummary | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [checkoutPaymentId, setCheckoutPaymentId] = useState<string | null>(null)
 
   useEffect(() => {
     async function loadPayments() {
       try {
         setLoading(true)
         setError(null)
-        const data = await fetchClientPayments(projectSlug)
+        const data = await fetchClientPayments(projectSlug ?? undefined)
         setPayments(data.payments)
         setSummary(data.summary)
       } catch (err) {
@@ -77,6 +86,34 @@ export function PaymentsView({ projectSlug }: PaymentsViewProps = {}) {
 
     void loadPayments()
   }, [projectSlug])
+
+  const handleCheckout = useCallback(
+    async (payment: ClientPaymentRecord) => {
+      try {
+        setCheckoutPaymentId(payment.id)
+        if (isStripeCheckoutUrl(payment.paymentLink)) {
+          window.open(payment.paymentLink, "_blank", "noopener,noreferrer")
+          return
+        }
+        const { url } = await createClientPaymentCheckout(payment.id)
+        setPayments((current) =>
+          current.map((currentPayment) =>
+            currentPayment.id === payment.id ? { ...currentPayment, paymentLink: url } : currentPayment,
+          ),
+        )
+        window.open(url, "_blank", "noopener,noreferrer")
+      } catch (checkoutError) {
+        console.error("Error creando checkout de Stripe", checkoutError)
+        const message =
+          (checkoutError as { response?: { data?: { message?: string } } }).response?.data?.message ??
+          "No pudimos generar el enlace de pago. Inténtalo de nuevo en unos segundos."
+        toast.error(message)
+      } finally {
+        setCheckoutPaymentId(null)
+      }
+    },
+    [],
+  )
 
   if (loading) {
     return (
@@ -172,16 +209,24 @@ export function PaymentsView({ projectSlug }: PaymentsViewProps = {}) {
               <div className="flex flex-col items-start gap-2 text-sm sm:flex-row sm:items-center sm:gap-6">
                 <Badge className={getStatusBadgeClass(payment.status)}>{getStatusLabel(payment.status)}</Badge>
                 <span className="font-semibold text-[#2F4F4F]">{formatCurrency(payment.amountCents, payment.currency)}</span>
-                {payment.paymentLink && payment.status === "pending" && (
+                {payment.status === "pending" && (
                   <Button
-                    asChild
                     variant="outline"
                     size="sm"
                     className="border-[#C6B89E] text-[#2F4F4F] hover:bg-[#F4F1EA]"
+                    onClick={() => {
+                      void handleCheckout(payment)
+                    }}
+                    disabled={checkoutPaymentId === payment.id}
                   >
-                    <a href={payment.paymentLink} target="_blank" rel="noopener noreferrer">
-                      Pagar ahora
-                    </a>
+                    {checkoutPaymentId === payment.id ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Conectando con Stripe...
+                      </>
+                    ) : (
+                      "Pagar ahora"
+                    )}
                   </Button>
                 )}
               </div>

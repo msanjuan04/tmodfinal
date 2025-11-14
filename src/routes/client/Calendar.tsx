@@ -159,6 +159,7 @@ export function ClientCalendarPage() {
         projectName={activeProjectName}
         showVisibility={false}
         headerContent={headerContent}
+        showAssistant={false}
       />
     </div>
   )

@@ -19,6 +19,7 @@ export function ClientMessagesPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null)
+  const primaryContact = messages?.conversations[0] ?? null
 
   useEffect(() => {
     void (async () => {
@@ -124,7 +125,7 @@ export function ClientMessagesPage() {
               <p className="text-xs uppercase tracking-[0.3em] text-[#C6B89E]">Tu proyecto</p>
               <h1 className="font-heading text-3xl text-[#2F4F4F] lg:text-4xl">Mensajes con Terrazea</h1>
               <p className="max-w-2xl text-sm text-[#6B7280]">
-                Coordina visitas, resuelve dudas y sigue el avance de tu obra en tiempo real con el equipo Terrazea.
+                Coordina visitas, resuelve dudas y sigue el avance de tu obra en tiempo real con la misma persona de referencia.
               </p>
             </div>
             {selectedProject ? (
@@ -133,6 +134,15 @@ export function ClientMessagesPage() {
                 <div className="mt-2 space-y-1">
                   <p className="font-medium text-[#2F4F4F]">{selectedProject.name}</p>
                   {selectedProject.code ? <p className="text-xs text-[#6B7280]">Código: {selectedProject.code}</p> : null}
+                </div>
+              </div>
+            ) : null}
+            {primaryContact ? (
+              <div className="rounded-[1.25rem] border border-[#E8E6E0] bg-white px-4 py-3 text-sm text-[#4B5563]">
+                <p className="text-xs uppercase tracking-[0.3em] text-[#C6B89E]">Tu project manager asignado</p>
+                <div className="mt-2 space-y-1 text-[#2F4F4F]">
+                  <p className="font-medium">{primaryContact.name}</p>
+                  {primaryContact.role ? <p className="text-xs text-[#6B7280]">{primaryContact.role}</p> : null}
                 </div>
               </div>
             ) : null}
@@ -186,6 +196,7 @@ export function ClientMessagesPage() {
           initialConversationId={activeConversationId}
           onConversationChange={handleConversationChange}
           onSendMessage={handleSendMessage}
+          hideConversationList
         />
       ) : (
         <Card className="rounded-[1.25rem] border-[#E8E6E0] bg-white">
