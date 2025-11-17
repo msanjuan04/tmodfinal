@@ -69,10 +69,13 @@ import {
   deleteProjectPayment,
   getAdminPaymentById,
   listAdminPayments,
+  UpdateProjectPaymentInput,
   updateProjectPayment,
 } from "../../lib/supabase/admin-payments"
 import { ensureStripeCustomer, createCheckoutSessionForPayment } from "../../lib/payments/stripe"
 import { env } from "../config/env"
+import { sendClientWelcomeEmail, sendDocumentSharedEmail, sendPaymentRequestEmail } from "../services/email"
+import { createProjectNotification, listAdminNotifications, markAdminNotificationRead } from "../../lib/supabase/notifications"
 import type { AdminPaymentRecord } from "@app/types/admin"
 
 type ProjectTeamRole = (typeof PROJECT_TEAM_ROLES)[number]
@@ -248,11 +251,41 @@ const updatePaymentSchema = z
 
 const STORAGE_BUCKET = "project-assets"
 
+function clientPortalBaseUrl() {
+  return (env.clientAppUrl ?? "http://localhost:5173").replace(/\/$/, "")
+}
+
+function formatCurrencyLabel(amountCents: number, currency: string) {
+  return new Intl.NumberFormat("es-ES", {
+    style: "currency",
+    currency: currency ?? "EUR",
+    minimumFractionDigits: 2,
+  }).format(amountCents / 100)
+}
+
+function formatDateLabel(value?: string | null) {
+  if (!value) return null
+  try {
+    return new Intl.DateTimeFormat("es-ES", { day: "2-digit", month: "long", year: "numeric" }).format(new Date(value))
+  } catch {
+    return value
+  }
+}
+
+interface EnsureClientAppUserResult {
+  shouldInvite: boolean
+  clientId: string
+  clientEmail: string
+  clientName: string
+  temporaryPassword?: string
+  projectCode?: string | null
+}
+
 async function ensureClientAppUser(
   supabase: SupabaseClient,
   clientId: string,
-  options: { projectCode: string },
-) {
+  options: { projectCode?: string | null },
+): Promise<EnsureClientAppUserResult | null> {
   try {
     const { data: client, error: clientError } = await supabase
       .from("clients")
@@ -262,15 +295,17 @@ async function ensureClientAppUser(
 
     if (clientError) {
       console.error("No se pudo obtener el cliente para crear usuario", clientError)
-      return
+      return null
     }
 
     if (!client || !client.email) {
-      return
+      return null
     }
 
     const email = client.email.trim().toLowerCase()
     const fullName = client.full_name?.trim() ?? "Cliente Terrazea"
+    let temporaryPassword: string | undefined
+    let shouldInvite = false
 
     const { data: existingUser, error: userError } = await supabase
       .from("app_users")
@@ -280,12 +315,12 @@ async function ensureClientAppUser(
 
     if (userError) {
       console.error("No se pudo comprobar el usuario del cliente", userError)
-      return
+      return null
     }
 
     if (!existingUser) {
-      const tempPassword = randomBytes(12).toString("base64url")
-      const passwordHash = await bcrypt.hash(tempPassword, 10)
+      temporaryPassword = randomBytes(12).toString("base64url")
+      const passwordHash = await bcrypt.hash(temporaryPassword, 10)
       const { error: insertError } = await supabase.from("app_users").insert({
         email,
         full_name: fullName,
@@ -297,31 +332,45 @@ async function ensureClientAppUser(
 
       if (insertError) {
         console.error("No se pudo crear el usuario del cliente", insertError)
+        return null
       }
-      return
+      shouldInvite = true
+    } else {
+      if (!existingUser.is_active) {
+        const { error: updateError } = await supabase
+          .from("app_users")
+          .update({ is_active: true, full_name: fullName })
+          .eq("id", existingUser.id)
+        if (updateError) {
+          console.error("No se pudo reactivar el usuario del cliente", updateError)
+        }
+      }
+
+      if (client.password_initialized === false) {
+        shouldInvite = true
+        if (existingUser.must_update_password !== true) {
+          const { error: flagError } = await supabase
+            .from("app_users")
+            .update({ must_update_password: true })
+            .eq("id", existingUser.id)
+          if (flagError) {
+            console.error("No se pudo marcar el usuario para crear contraseña", flagError)
+          }
+        }
+      }
     }
 
-    if (!existingUser.is_active) {
-      const { error: updateError } = await supabase
-        .from("app_users")
-        .update({ is_active: true, full_name: fullName })
-        .eq("id", existingUser.id)
-      if (updateError) {
-        console.error("No se pudo reactivar el usuario del cliente", updateError)
-      }
-    }
-
-    if (client.password_initialized === false && existingUser.must_update_password !== true) {
-      const { error: flagError } = await supabase
-        .from("app_users")
-        .update({ must_update_password: true })
-        .eq("id", existingUser.id)
-      if (flagError) {
-        console.error("No se pudo marcar el usuario para crear contraseña", flagError)
-      }
+    return {
+      shouldInvite,
+      clientId: client.id,
+      clientEmail: email,
+      clientName: fullName,
+      temporaryPassword,
+      projectCode: options.projectCode ?? null,
     }
   } catch (error) {
     console.error("No se pudo asegurar el usuario del cliente", error)
+    return null
   }
 }
 
@@ -331,7 +380,64 @@ async function sendDraftPayment(payment: AdminPaymentRecord): Promise<AdminPayme
   }
 
   const supabase = createServerSupabaseClient()
-  const clientAppBase = (env.clientAppUrl ?? "http://localhost:5173").replace(/\/$/, "")
+  const clientAppBase = clientPortalBaseUrl()
+
+  const { data: client, error: clientError } = await supabase
+    .from("clients")
+    .select("id, full_name, email, stripe_customer_id")
+    .eq("id", payment.clientId)
+    .maybeSingle()
+
+  const clientContact = !client || !client.email
+    ? null
+    : {
+        id: client.id,
+        name: client.full_name ?? payment.clientName ?? "Cliente Terrazea",
+        email: client.email,
+        stripeCustomerId: client.stripe_customer_id ?? payment.clientStripeCustomerId ?? payment.stripeCustomerId ?? null,
+      }
+
+  const notifyClientPayment = async (record: AdminPaymentRecord) => {
+    if (!clientContact) return
+    const paymentLink = record.paymentLink ?? `${clientAppBase}/client/payments?payment=${record.id}`
+    const amountLabel = formatCurrencyLabel(record.amountCents, record.currency)
+    const dueDateLabel = formatDateLabel(record.dueDate)
+    try {
+      await sendPaymentRequestEmail({
+        to: clientContact.email,
+        name: clientContact.name,
+        concept: record.concept,
+        amountCents: record.amountCents,
+        currency: record.currency,
+        paymentLink,
+        dueDate: record.dueDate,
+        projectName: record.projectName ?? payment.projectName ?? null,
+      })
+    } catch (emailError) {
+      console.error("[email] No se pudo notificar el pago pendiente", emailError)
+    }
+
+    try {
+      await createProjectNotification({
+        audience: "client",
+        clientId: clientContact.id,
+        projectId: record.projectId,
+        type: "payment_pending",
+        title: `Nuevo pago: ${record.concept}`,
+        description: dueDateLabel ? `${amountLabel} · vence ${dueDateLabel}` : amountLabel,
+        linkUrl: paymentLink,
+        relatedId: record.id,
+        metadata: {
+          paymentId: record.id,
+          amountCents: record.amountCents,
+          currency: record.currency,
+          status: record.status,
+        },
+      })
+    } catch (notificationError) {
+      console.error("[notifications] No se pudo registrar el pago pendiente", notificationError)
+    }
+  }
 
   const fallbackPending = async (reason: string) => {
     console.warn(`[payments] Envío omitido (${reason}). Marcando pago ${payment.id} como pendiente (modo fallback).`)
@@ -351,19 +457,10 @@ async function sendDraftPayment(payment: AdminPaymentRecord): Promise<AdminPayme
     if (!updated) {
       throw new Error("No se pudo recuperar el pago enviado.")
     }
+
+    await notifyClientPayment(updated)
     return updated
   }
-
-  const stripeEnabled = Boolean(env.stripeSecretKey && env.stripeSecretKey.startsWith("sk_"))
-  if (!stripeEnabled) {
-    return fallbackPending("Stripe no configurado")
-  }
-
-  const { data: client, error: clientError } = await supabase
-    .from("clients")
-    .select("id, full_name, email, stripe_customer_id")
-    .eq("id", payment.clientId)
-    .maybeSingle()
 
   if (clientError || !client) {
     return fallbackPending("Cliente no disponible")
@@ -373,12 +470,21 @@ async function sendDraftPayment(payment: AdminPaymentRecord): Promise<AdminPayme
     return fallbackPending("Cliente sin correo")
   }
 
+  const stripeEnabled = Boolean(env.stripeSecretKey && env.stripeSecretKey.startsWith("sk_"))
+  if (!stripeEnabled) {
+    return fallbackPending("Stripe no configurado")
+  }
+
+  if (!clientContact) {
+    return fallbackPending("Cliente sin datos de contacto")
+  }
+
   try {
     const stripeCustomerId = await ensureStripeCustomer({
-      id: client.id,
-      fullName: client.full_name ?? payment.clientName ?? "Cliente Terrazea",
-      email: client.email,
-      stripeCustomerId: client.stripe_customer_id ?? payment.clientStripeCustomerId ?? payment.stripeCustomerId ?? null,
+      id: clientContact.id,
+      fullName: clientContact.name,
+      email: clientContact.email,
+      stripeCustomerId: clientContact.stripeCustomerId,
     })
 
     const checkoutSession = await createCheckoutSessionForPayment({
@@ -417,6 +523,7 @@ async function sendDraftPayment(payment: AdminPaymentRecord): Promise<AdminPayme
     if (!updated) {
       throw new Error("No se pudo recuperar el pago enviado.")
     }
+    await notifyClientPayment(updated)
     return updated
   } catch (error) {
     console.error("Error enviando pago", error)
@@ -882,6 +989,50 @@ router.post(
       return
     }
 
+    const ensured = await ensureClientAppUser(supabase, data.id, { projectCode: null })
+    if (ensured?.shouldInvite) {
+      const portalUrl = `${clientPortalBaseUrl()}/client/setup-password`
+      try {
+        await sendClientWelcomeEmail({
+          to: ensured.clientEmail,
+          name: ensured.clientName,
+          temporaryPassword: ensured.temporaryPassword,
+          projectCode: ensured.projectCode,
+        })
+      } catch (emailError) {
+        console.error("[email] No se pudo enviar la invitación al cliente", emailError)
+      }
+
+      try {
+        await createProjectNotification({
+          audience: "client",
+          clientId: ensured.clientId,
+          projectId: null,
+          type: "client_invited",
+          title: "Bienvenido al Portal Terrazea",
+          description: "Activa tu acceso para empezar a seguir tu proyecto.",
+          linkUrl: portalUrl,
+          metadata: { email: ensured.clientEmail },
+        })
+      } catch (notificationError) {
+        console.error("[notifications] No se pudo registrar la invitación de cliente", notificationError)
+      }
+    }
+
+    try {
+      await createProjectNotification({
+        audience: "admin",
+        clientId: data.id,
+        projectId: null,
+        type: "client_created",
+        title: `Nuevo cliente: ${data.full_name}`,
+        description: data.email,
+        metadata: { clientId: data.id, email: data.email },
+      })
+    } catch (notificationError) {
+      console.error("[notifications] No se pudo registrar el alta de cliente", notificationError)
+    }
+
     response.status(201).json({ client: data })
   }),
 )
@@ -1187,7 +1338,35 @@ router.post(
         assignments,
       })
 
-      await ensureClientAppUser(supabase, clientId, { projectCode: project.code })
+      const ensured = await ensureClientAppUser(supabase, clientId, { projectCode: project.code })
+      if (ensured?.shouldInvite) {
+        const portalUrl = `${clientPortalBaseUrl()}/client/setup-password`
+        try {
+          await sendClientWelcomeEmail({
+            to: ensured.clientEmail,
+            name: ensured.clientName,
+            temporaryPassword: ensured.temporaryPassword,
+            projectCode: ensured.projectCode,
+          })
+        } catch (emailError) {
+          console.error("[email] No se pudo enviar invitación del proyecto", emailError)
+        }
+
+        try {
+          await createProjectNotification({
+            audience: "client",
+            clientId: ensured.clientId,
+            projectId: project.id,
+            type: "client_invited",
+            title: "Acceso disponible a tu proyecto",
+            description: `Activa tu cuenta para seguir ${project.name}.`,
+            linkUrl: portalUrl,
+            metadata: { projectId: project.id, projectCode: project.code },
+          })
+        } catch (notificationError) {
+          console.error("[notifications] No se pudo registrar la invitación del proyecto", notificationError)
+        }
+      }
 
       response.status(201).json({ message: "Proyecto creado", project })
     } catch (error) {
@@ -1425,6 +1604,7 @@ router.post(
   asyncHandler(async (request, response) => {
     const session = requireAdminSession(request)
     const { projectId } = request.params
+    const supabase = createServerSupabaseClient()
     const parsed = documentUploadSchema.safeParse(request.body)
     if (!parsed.success) {
       console.warn("Documento inválido", parsed.error.flatten().fieldErrors)
@@ -1474,6 +1654,68 @@ router.post(
       eventType: notifyClient ? "document_shared" : "document_uploaded",
       status: "info",
     })
+
+    if (notifyClient) {
+      try {
+        const sharedClientIds = new Set(clientIds.filter(Boolean))
+        let projectName: string | null = null
+
+        const { data: projectRow } = await supabase
+          .from("projects")
+          .select("id, name, client_id")
+          .eq("id", projectId)
+          .maybeSingle()
+        projectName = projectRow?.name ?? null
+
+        if (!sharedClientIds.size && projectRow?.client_id) {
+          sharedClientIds.add(projectRow.client_id)
+        }
+
+        if (sharedClientIds.size > 0) {
+          const { data: recipients } = await supabase
+            .from("clients")
+            .select("id, full_name, email")
+            .in("id", Array.from(sharedClientIds))
+
+          await Promise.all(
+            (recipients ?? [])
+              .filter((recipient) => recipient.email)
+              .map(async (recipient) => {
+                await sendDocumentSharedEmail({
+                  to: recipient.email!,
+                  name: recipient.full_name ?? "Cliente Terrazea",
+                  documentName: parsed.data.name,
+                  documentCategory: parsed.data.category,
+                  projectName,
+                  documentUrl: upload.publicUrl,
+                })
+
+                try {
+                  await createProjectNotification({
+                    audience: "client",
+                    clientId: recipient.id,
+                    projectId,
+                    type: "document_shared",
+                    title: parsed.data.name,
+                    description: parsed.data.category ?? "Documento disponible",
+                    linkUrl: upload.publicUrl,
+                    relatedId: id,
+                    metadata: {
+                      projectId,
+                      documentId: id,
+                      category: parsed.data.category,
+                    },
+                  })
+                } catch (notificationError) {
+                  console.error("[notifications] No se pudo registrar el nuevo documento", notificationError)
+                }
+              }),
+          )
+        }
+      } catch (emailError) {
+        console.error("[email] No se pudo notificar el nuevo documento", emailError)
+      }
+    }
 
     response.status(201).json({ id, url: upload.publicUrl })
   }),
@@ -1542,6 +1784,31 @@ router.post(
     })
 
     response.status(201).json({ id, url: upload.publicUrl })
+  }),
+)
+
+router.get(
+  "/notifications",
+  asyncHandler(async (request, response) => {
+    requireAdminSession(request)
+    const limitParam = typeof request.query.limit === "string" ? Number.parseInt(request.query.limit, 10) : undefined
+    const limit = Number.isFinite(limitParam) ? limitParam : undefined
+    const feed = await listAdminNotifications({ limit })
+    response.json(feed)
+  }),
+)
+
+router.post(
+  "/notifications/:notificationId/read",
+  asyncHandler(async (request, response) => {
+    requireAdminSession(request)
+    const { notificationId } = request.params
+    if (!notificationId) {
+      response.status(400).json({ message: "Notificación no especificada" })
+      return
+    }
+    await markAdminNotificationRead(notificationId)
+    response.status(204).end()
   }),
 )
 

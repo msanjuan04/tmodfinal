@@ -38,6 +38,8 @@ const CLIENT_PAYMENT_SELECT = `
   )
 `
 
+type Relation<T> = T | T[] | null
+
 type ClientPaymentRow = {
   id: string
   project_id: string
@@ -52,15 +54,21 @@ type ClientPaymentRow = {
   paid_at: string | null
   created_at: string
   updated_at: string
-  projects: { name: string | null; slug: string | null } | null
+  projects: Relation<{ name: string | null; slug: string | null }>
+}
+
+function getSingleRelation<T>(relation: Relation<T>): T | null {
+  if (!relation) return null
+  return Array.isArray(relation) ? relation[0] ?? null : relation
 }
 
 function mapClientPayment(row: ClientPaymentRow): ClientPaymentRecord {
+  const project = getSingleRelation(row.projects)
   return {
     id: row.id,
     projectId: row.project_id,
-    projectName: row.projects?.name ?? null,
-    projectSlug: row.projects?.slug ?? null,
+    projectName: project?.name ?? null,
+    projectSlug: project?.slug ?? null,
     concept: row.concept,
     description: row.description ?? null,
     status: row.status,

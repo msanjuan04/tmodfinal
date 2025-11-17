@@ -24,6 +24,7 @@ alter table if exists public.project_updates disable row level security;
 alter table if exists public.projects disable row level security;
 alter table if exists public.clients disable row level security;
 alter table if exists public.app_users disable row level security;
+alter table if exists public.project_notifications disable row level security;
 
 -- Eliminar datos existentes (en orden correcto por foreign keys)
 delete from public.project_messages;
@@ -64,6 +65,7 @@ drop table if exists public.project_updates cascade;
 drop table if exists public.projects cascade;
 drop table if exists public.clients cascade;
 drop table if exists public.app_users cascade;
+drop table if exists public.project_notifications cascade;
 
 -- Eliminar tipos existentes
 drop type if exists public.message_sender cascade;
@@ -73,6 +75,7 @@ drop type if exists public.phase_status cascade;
 drop type if exists public.milestone_status cascade;
 drop type if exists public.update_type cascade;
 drop type if exists public.payment_status cascade;
+drop type if exists public.notification_audience cascade;
 
 -- ============================================================================
 -- BLOCK 2: SCHEMA COMPLETO - Ejecutar después del bloque de limpieza
@@ -192,6 +195,7 @@ create table public.projects (
 create type public.update_type as enum ('success', 'info', 'warning', 'message');
 
 create type public.payment_status as enum ('draft', 'pending', 'paid', 'failed', 'canceled');
+create type public.notification_audience as enum ('client', 'admin');
 
 create table public.project_updates (
   id uuid primary key default uuid_generate_v4(),
@@ -462,6 +466,24 @@ create index project_payments_checkout_idx on public.project_payments(stripe_che
 create index project_payments_payment_intent_idx on public.project_payments(stripe_payment_intent_id);
 create index project_payments_document_idx on public.project_payments(proposal_document_id);
 
+create table public.project_notifications (
+  id uuid primary key default uuid_generate_v4(),
+  project_id uuid references public.projects(id) on delete cascade,
+  client_id uuid references public.clients(id) on delete cascade,
+  audience public.notification_audience not null default 'client',
+  type text not null,
+  title text not null,
+  description text,
+  link_url text,
+  related_id text,
+  metadata jsonb not null default '{}'::jsonb,
+  read_at timestamptz,
+  created_at timestamptz not null default now()
+);
+create index project_notifications_audience_idx on public.project_notifications(audience, created_at desc);
+create index project_notifications_client_idx on public.project_notifications(client_id, created_at desc);
+create index project_notifications_project_idx on public.project_notifications(project_id, created_at desc);
+
 -- Enable RLS (service role used by Next.js server bypasses policies)
 alter table public.app_users enable row level security;
 alter table public.clients enable row level security;
@@ -486,6 +508,7 @@ alter table public.project_task_activity enable row level security;
 alter table public.project_payments enable row level security;
 alter table public.client_notes enable row level security;
 alter table public.client_activity enable row level security;
+alter table public.project_notifications enable row level security;
 
 -- --------------------------------------------------------------------------
 -- RLS policies: permitir acceso completo solo al service role y admin Terrazea
@@ -607,6 +630,18 @@ create policy service_role_full_access_project_payments
 
 create policy admin_email_full_access_project_payments
   on public.project_payments
+  for all
+  using (lower(coalesce(current_setting('request.jwt.claims', true), '{}')::json ->> 'email') = 'aterrazea@gmail.com')
+  with check (lower(coalesce(current_setting('request.jwt.claims', true), '{}')::json ->> 'email') = 'aterrazea@gmail.com');
+
+create policy service_role_full_access_project_notifications
+  on public.project_notifications
+  for all
+  using (auth.role() = 'service_role')
+  with check (auth.role() = 'service_role');
+
+create policy admin_email_full_access_project_notifications
+  on public.project_notifications
   for all
   using (lower(coalesce(current_setting('request.jwt.claims', true), '{}')::json ->> 'email') = 'aterrazea@gmail.com')
   with check (lower(coalesce(current_setting('request.jwt.claims', true), '{}')::json ->> 'email') = 'aterrazea@gmail.com');

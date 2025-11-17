@@ -8,6 +8,7 @@ import type {
   ProjectDetailsData,
 } from "@/lib/supabase/queries"
 import type { DocumentsData } from "@app/types/documents"
+import type { NotificationsFeed } from "@app/types/notifications"
 
 import { api } from "@app/lib/api"
 
@@ -136,4 +137,14 @@ interface ClientCheckoutResponse {
 export async function createClientPaymentCheckout(paymentId: string): Promise<ClientCheckoutResponse> {
   const response = await api.post<ClientCheckoutResponse>(`/client/payments/${paymentId}/checkout`)
   return response.data
+}
+
+export async function fetchClientNotifications(options?: { limit?: number }): Promise<NotificationsFeed> {
+  const params = options?.limit ? { limit: options.limit } : undefined
+  const response = await api.get<NotificationsFeed>("/client/notifications", { params })
+  return response.data
+}
+
+export async function markClientNotificationRead(notificationId: string) {
+  await api.post(`/client/notifications/${notificationId}/read`)
 }

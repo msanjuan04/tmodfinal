@@ -65,7 +65,6 @@ if (env.nodeEnv === "production") {
 }
 
 // Error handler debe ir al final
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 app.use((error: Error & { status?: number }, _request: express.Request, response: express.Response, _next: express.NextFunction) => {
   const status = error.status ?? 500
   if (status >= 500) {

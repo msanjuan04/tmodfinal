@@ -41,6 +41,8 @@ const PAYMENT_SELECT = `
   )
 `
 
+type Relation<T> = T | T[] | null
+
 type PaymentRow = {
   id: string
   project_id: string
@@ -63,20 +65,28 @@ type PaymentRow = {
   created_at: string
   updated_at: string
   metadata: Record<string, unknown> | null
-  projects: { name: string | null; slug: string | null } | null
-  clients: { full_name: string | null; email: string | null; stripe_customer_id: string | null } | null
-  proposal_document: { id: string; name: string | null; storage_path: string | null } | null
+  projects: Relation<{ name: string | null; slug: string | null }>
+  clients: Relation<{ full_name: string | null; email: string | null; stripe_customer_id: string | null }>
+  proposal_document: Relation<{ id: string; name: string | null; storage_path: string | null }>
+}
+
+function getSingleRelation<T>(relation: Relation<T>): T | null {
+  if (!relation) return null
+  return Array.isArray(relation) ? relation[0] ?? null : relation
 }
 
 function mapPayment(row: PaymentRow, resolveDocumentUrl: (path: string | null) => string | null): AdminPaymentRecord {
-  const documentPath = row.proposal_document?.storage_path ?? null
+  const proposalDocument = getSingleRelation(row.proposal_document)
+  const documentPath = proposalDocument?.storage_path ?? null
+  const project = getSingleRelation(row.projects)
+  const client = getSingleRelation(row.clients)
   return {
     id: row.id,
     projectId: row.project_id,
-    projectName: row.projects?.name ?? "Proyecto sin nombre",
-    projectSlug: row.projects?.slug ?? null,
+    projectName: project?.name ?? "Proyecto sin nombre",
+    projectSlug: project?.slug ?? null,
     clientId: row.client_id,
-    clientName: row.clients?.full_name ?? null,
+    clientName: client?.full_name ?? null,
     concept: row.concept,
     description: row.description ?? null,
     status: row.status,
@@ -94,10 +104,10 @@ function mapPayment(row: PaymentRow, resolveDocumentUrl: (path: string | null) =
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     metadata: row.metadata ?? {},
-    clientEmail: row.clients?.email ?? null,
-    clientStripeCustomerId: row.clients?.stripe_customer_id ?? null,
-    proposalDocumentId: row.proposal_document_id ?? row.proposal_document?.id ?? null,
-    proposalDocumentName: row.proposal_document?.name ?? null,
+    clientEmail: client?.email ?? null,
+    clientStripeCustomerId: client?.stripe_customer_id ?? null,
+    proposalDocumentId: row.proposal_document_id ?? proposalDocument?.id ?? null,
+    proposalDocumentName: proposalDocument?.name ?? null,
     proposalDocumentUrl: resolveDocumentUrl(documentPath),
   }
 }

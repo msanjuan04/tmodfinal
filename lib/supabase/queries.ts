@@ -1,6 +1,9 @@
 // @ts-nocheck
 import type { SupabaseClient } from "@supabase/supabase-js"
 
+import { env } from "../../server/config/env"
+import { sendConversationNotificationEmail } from "../../server/services/email"
+import { createProjectNotification } from "./notifications"
 import { createServerSupabaseClient, resolveDefaultProjectSlug } from "./server"
 
 type UpdateType = "success" | "info" | "warning" | "message"
@@ -709,7 +712,30 @@ export async function sendTeamMemberConversationMessage(conversationId: string, 
   const supabase = createServerSupabaseClient()
   const { data: conversation, error } = await supabase
     .from("project_conversations")
-    .select("id, team_member_id, unread_count")
+    .select(
+      `
+        id,
+        team_member_id,
+        unread_count,
+        last_message_at,
+        projects!inner(
+          id,
+          slug,
+          name,
+          client_id,
+          clients(
+            id,
+            full_name,
+            email
+          )
+        ),
+        team_member:team_members(
+          id,
+          full_name,
+          email
+        )
+      `,
+    )
     .eq("id", conversationId)
     .maybeSingle()
 
@@ -730,6 +756,10 @@ export async function sendTeamMemberConversationMessage(conversationId: string, 
     throw invalid
   }
 
+  const projectSlug = conversation.projects?.slug ?? ""
+  const messagePreview = buildMessagePreview(trimmed)
+  const previousMessageAt = conversation.last_message_at
+
   const { error: insertError } = await supabase.from("project_messages").insert({
     conversation_id: conversationId,
     sender_type: "team_member",
@@ -744,7 +774,7 @@ export async function sendTeamMemberConversationMessage(conversationId: string, 
   const { error: updateError } = await supabase
     .from("project_conversations")
     .update({
-      last_message_preview: buildMessagePreview(trimmed),
+      last_message_preview: messagePreview,
       last_message_at: new Date().toISOString(),
       unread_count: 0,
     })
@@ -752,6 +782,47 @@ export async function sendTeamMemberConversationMessage(conversationId: string, 
 
   if (updateError) {
     throw updateError
+  }
+
+  if (conversation.projects?.clients?.id) {
+    try {
+      await createProjectNotification({
+        audience: "client",
+        clientId: conversation.projects.clients.id,
+        projectId: conversation.projects?.id ?? null,
+        type: "message_team",
+        title: `Nuevo mensaje de ${conversation.team_member?.full_name ?? "Equipo Terrazea"}`,
+        description: messagePreview,
+        linkUrl: `${clientAppBase()}/client/messages${projectSlug ? `?project=${projectSlug}` : ""}`,
+        relatedId: conversationId,
+        metadata: {
+          conversationId,
+          senderType: "team_member",
+        },
+      })
+    } catch (notificationError) {
+      console.error("[notifications] No se pudo registrar la notificación de mensaje (cliente)", notificationError)
+    }
+  }
+
+  if (
+    shouldSendConversationEmail(previousMessageAt) &&
+    conversation.projects?.clients?.email
+  ) {
+    const ctaUrl = `${clientAppBase()}/client/messages${projectSlug ? `?project=${projectSlug}` : ""}`
+    try {
+      await sendConversationNotificationEmail({
+        to: conversation.projects.clients.email,
+        recipientName: conversation.projects.clients.full_name ?? "Cliente Terrazea",
+        senderName: conversation.team_member?.full_name ?? "Equipo Terrazea",
+        projectName: conversation.projects?.name ?? null,
+        messageSnippet: messagePreview,
+        ctaUrl,
+        audience: "client",
+      })
+    } catch (notificationError) {
+      console.error("[email] No se pudo notificar al cliente del mensaje", notificationError)
+    }
   }
 }
 
@@ -763,7 +834,30 @@ export async function sendClientConversationMessage(
   const supabase = createServerSupabaseClient()
   const { data: conversation, error } = await supabase
     .from("project_conversations")
-    .select("id, team_member_id, unread_count, projects!inner(id, slug, client_id)")
+    .select(
+      `
+        id,
+        team_member_id,
+        unread_count,
+        last_message_at,
+        projects!inner(
+          id,
+          slug,
+          name,
+          client_id,
+          clients(
+            id,
+            full_name,
+            email
+          )
+        ),
+        team_member:team_members(
+          id,
+          full_name,
+          email
+        )
+      `,
+    )
     .eq("id", conversationId)
     .maybeSingle()
 
@@ -790,6 +884,10 @@ export async function sendClientConversationMessage(
     throw invalid
   }
 
+  const projectSlug = conversation.projects?.slug ?? ""
+  const messagePreview = buildMessagePreview(trimmed)
+  const previousMessageAt = conversation.last_message_at
+
   const { error: insertError } = await supabase.from("project_messages").insert({
     conversation_id: conversationId,
     sender_type: "client",
@@ -806,7 +904,7 @@ export async function sendClientConversationMessage(
   const { error: updateError } = await supabase
     .from("project_conversations")
     .update({
-      last_message_preview: buildMessagePreview(trimmed),
+      last_message_preview: messagePreview,
       last_message_at: new Date().toISOString(),
       unread_count: nextUnread,
     })
@@ -815,4 +913,55 @@ export async function sendClientConversationMessage(
   if (updateError) {
     throw updateError
   }
+
+  try {
+    await createProjectNotification({
+      audience: "admin",
+      clientId: conversation.projects?.client_id ?? conversation.projects?.clients?.id ?? null,
+      projectId: conversation.projects?.id ?? null,
+      type: "message_client",
+      title: `Mensaje de ${conversation.projects?.clients?.full_name ?? "Cliente Terrazea"}`,
+      description: messagePreview,
+      linkUrl: `${clientAppBase()}/dashboard/messages${projectSlug ? `?project=${projectSlug}` : ""}`,
+      relatedId: conversationId,
+      metadata: {
+        conversationId,
+        senderType: "client",
+      },
+    })
+  } catch (notificationError) {
+    console.error("[notifications] No se pudo registrar la notificación de mensaje (admin)", notificationError)
+  }
+
+  if (
+    shouldSendConversationEmail(previousMessageAt) &&
+    conversation.team_member?.email
+  ) {
+    const projectSlug = conversation.projects?.slug ?? ""
+    const ctaUrl = `${clientAppBase()}/dashboard/messages${projectSlug ? `?project=${projectSlug}` : ""}`
+    try {
+      await sendConversationNotificationEmail({
+        to: conversation.team_member.email,
+        recipientName: conversation.team_member.full_name ?? "Equipo Terrazea",
+        senderName: conversation.projects?.clients?.full_name ?? "Cliente Terrazea",
+        projectName: conversation.projects?.name ?? null,
+        messageSnippet: messagePreview,
+        ctaUrl,
+        audience: "team",
+      })
+    } catch (notificationError) {
+      console.error("[email] No se pudo notificar al equipo del mensaje", notificationError)
+    }
+  }
+}
+
+function shouldSendConversationEmail(lastMessageAt?: string | null) {
+  if (!lastMessageAt) return true
+  const previous = new Date(lastMessageAt).getTime()
+  const threshold = 10 * 60 * 1000
+  return Number.isFinite(previous) ? Date.now() - previous >= threshold : true
+}
+
+function clientAppBase() {
+  return (env.clientAppUrl ?? "http://localhost:5173").replace(/\/$/, "")
 }

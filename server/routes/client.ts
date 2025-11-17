@@ -18,6 +18,7 @@ import { createServerSupabaseClient } from "../../lib/supabase/server"
 import { ensureStripeCustomer, createCheckoutSessionForPayment } from "../../lib/payments/stripe"
 import { requireSession } from "../services/session"
 import { asyncHandler } from "../utils/async-handler"
+import { listClientNotifications, markClientNotificationRead } from "../../lib/supabase/notifications"
 
 const router = Router()
 
@@ -338,6 +339,39 @@ router.post(
       }
       throw error
     }
+  }),
+)
+
+router.get(
+  "/notifications",
+  asyncHandler(async (request, response) => {
+    const session = requireSession(request)
+    if (!session.clientId) {
+      response.status(403).json({ message: "No tienes proyectos asociados" })
+      return
+    }
+    const limitParam = typeof request.query.limit === "string" ? Number.parseInt(request.query.limit, 10) : undefined
+    const limit = Number.isFinite(limitParam) ? limitParam : undefined
+    const feed = await listClientNotifications(session.clientId, { limit })
+    response.json(feed)
+  }),
+)
+
+router.post(
+  "/notifications/:notificationId/read",
+  asyncHandler(async (request, response) => {
+    const session = requireSession(request)
+    if (!session.clientId) {
+      response.status(403).json({ message: "No tienes proyectos asociados" })
+      return
+    }
+    const { notificationId } = request.params
+    if (!notificationId) {
+      response.status(400).json({ message: "Notificación no especificada" })
+      return
+    }
+    await markClientNotificationRead(notificationId, session.clientId)
+    response.status(204).end()
   }),
 )
 

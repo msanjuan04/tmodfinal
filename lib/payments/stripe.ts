@@ -7,7 +7,7 @@ import { createServerSupabaseClient } from "../supabase/server"
 import type { AdminPaymentRecord } from "@app/types/admin"
 
 const stripe = new Stripe(env.stripeSecretKey, {
-  apiVersion: "2024-06-20",
+  apiVersion: "2025-02-24.acacia",
   appInfo: {
     name: "Terrazea ClientZone",
   },

@@ -34,6 +34,7 @@ import {
   Users,
 } from "lucide-react"
 import { TerrazeaBrand } from "@/components/terrazea-brand"
+import { NotificationsMenu } from "@/components/notifications/NotificationsMenu"
 
 const navigation = [
   { name: "Resumen", href: "/dashboard", icon: LayoutDashboard },
@@ -172,10 +173,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
         <TerrazeaBrand subtitle={portalSubtitle} collapseSubtitleOnMobile />
 
         <div className="ml-auto flex items-center gap-2">
-          <Button variant="ghost" size="icon" className="relative">
-            <Bell className="h-5 w-5" />
-            <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-red-500" />
-          </Button>
+          <NotificationsMenu audience="admin" />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon">
@@ -211,6 +209,12 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
           </DropdownMenu>
         </div>
       </header>
+
+      <div className="hidden border-b border-[#e8e6e0] bg-white/80 lg:block lg:pl-64">
+        <div className="flex items-center justify-end px-8 py-4">
+          <NotificationsMenu audience="admin" buttonVariant="outline" />
+        </div>
+      </div>
 
       {/* Main Content */}
       <main className="lg:pl-64">

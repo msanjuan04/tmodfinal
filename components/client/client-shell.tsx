@@ -20,6 +20,7 @@ import type { SessionData } from "@app/types/session"
 import type { ClientProjectSummary } from "@app/types/client"
 import { ProjectSwitcher } from "./project-switcher"
 import { TerrazeaBrand } from "@/components/terrazea-brand"
+import { NotificationsMenu } from "@/components/notifications/NotificationsMenu"
 
 interface NavItem {
   label: string
@@ -112,6 +113,7 @@ export function ClientShell({ user, projects, children }: ClientShellProps) {
           </div>
 
           <div className="flex items-center gap-4">
+            <NotificationsMenu audience="client" />
             <div className="hidden text-right text-sm lg:block">
               <p className="font-semibold text-[#2F4F4F]">{user.name}</p>
               <p className="text-[#6B7280]">{user.email}</p>

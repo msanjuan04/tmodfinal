@@ -18,6 +18,7 @@ import type {
 } from "@app/types/admin"
 import type { DocumentsData } from "@app/types/documents"
 import type { MessagesData } from "@/lib/supabase/queries"
+import type { NotificationsFeed } from "@app/types/notifications"
 
 export interface CreateAdminClientPayload {
   fullName: string
@@ -442,4 +443,14 @@ export async function addProjectTaskToCalendar(projectId: string, taskId: string
 export async function fetchAdminProjectTaskActivity(projectId: string, taskId: string): Promise<AdminProjectTaskActivity[]> {
   const response = await api.get<{ activity: AdminProjectTaskActivity[] }>(`/admin/projects/${projectId}/tasks/${taskId}/activity`)
   return response.data.activity
+}
+
+export async function fetchAdminNotifications(options?: { limit?: number }): Promise<NotificationsFeed> {
+  const params = options?.limit ? { limit: options.limit } : undefined
+  const response = await api.get<NotificationsFeed>("/admin/notifications", { params })
+  return response.data
+}
+
+export async function markAdminNotificationRead(notificationId: string) {
+  await api.post(`/admin/notifications/${notificationId}/read`)
 }

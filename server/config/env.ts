@@ -26,6 +26,23 @@ const envSchema = z.object({
   SESSION_COOKIE_SECURE: z.coerce.boolean().optional(),
   STRIPE_SECRET_KEY: z.string().min(10, "STRIPE_SECRET_KEY must be provided"),
   STRIPE_WEBHOOK_SECRET: z.string().min(10, "STRIPE_WEBHOOK_SECRET must be provided"),
+  RESEND_API_KEY: z.string().min(20, "RESEND_API_KEY must be provided"),
+  RESEND_FROM_EMAIL: z.string().email("RESEND_FROM_EMAIL must be a valid email"),
+  RESEND_BCC: z.preprocess(
+    (value) => (typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined),
+    z.string().email().optional(),
+  ),
+  RESEND_AUDIENCE_ID: z.preprocess(
+    (value) => (typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined),
+    z.string().optional(),
+  ),
+  RESEND_DRY_RUN: z.preprocess(
+    (value) => {
+      if (value === undefined || value === null || value === "") return undefined
+      return value
+    },
+    z.coerce.boolean().optional(),
+  ),
 })
 
 const parsed = envSchema.safeParse({
@@ -41,6 +58,10 @@ const parsed = envSchema.safeParse({
   SESSION_COOKIE_SECURE: process.env.SESSION_COOKIE_SECURE,
   STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY,
   STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET,
+  RESEND_API_KEY: process.env.RESEND_API_KEY,
+  RESEND_FROM_EMAIL: process.env.RESEND_FROM_EMAIL,
+  RESEND_BCC: process.env.RESEND_BCC,
+  RESEND_AUDIENCE_ID: process.env.RESEND_AUDIENCE_ID,
 })
 
 if (!parsed.success) {
@@ -82,5 +103,12 @@ export const env = {
     sameSite: sessionSameSite,
     secure: sessionSecure,
     domain: sessionDomain && sessionDomain.length > 0 ? sessionDomain : null,
+  },
+  resend: {
+    apiKey: parsed.data.RESEND_API_KEY,
+    fromEmail: parsed.data.RESEND_FROM_EMAIL,
+    bccEmail: parsed.data.RESEND_BCC ?? null,
+    audienceId: parsed.data.RESEND_AUDIENCE_ID ?? null,
+    dryRun: parsed.data.RESEND_DRY_RUN ?? parsed.data.NODE_ENV !== "production",
   },
 }

@@ -120,7 +120,7 @@ async function generateProjectCode(supabase: ReturnType<typeof createServerSupab
 
 export async function createAdminProjectRecord(
   payload: AdminProjectUpsertInput,
-): Promise<{ id: string; slug: string; code: string }> {
+): Promise<{ id: string; slug: string; code: string; name: string }> {
   const supabase = createServerSupabaseClient()
   const codeToUse =
     payload.code && payload.code.trim().length > 0 ? payload.code.trim() : await generateProjectCode(supabase)
@@ -153,7 +153,7 @@ export async function createAdminProjectRecord(
         const managerAssignments: TeamAssignmentsMap = { director: payload.managerId }
         await assignProjectTeamRoles(data.id, managerAssignments)
       }
-      return { id: data.id, slug: data.slug, code: codeToUse }
+      return { id: data.id, slug: data.slug, code: codeToUse, name: payload.name.trim() }
     }
 
     if (error?.code === "23505") {

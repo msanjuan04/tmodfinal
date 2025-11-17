@@ -2,12 +2,14 @@ import { Router } from "express"
 import Stripe from "stripe"
 import { createServerSupabaseClient } from "../../lib/supabase/server"
 import { env } from "../config/env"
+import { sendPaymentReceiptEmail } from "../services/email"
+import { getAdminPaymentById } from "../../lib/supabase/admin-payments"
 import { asyncHandler } from "../utils/async-handler"
 
 const router = Router()
 
 const stripe = new Stripe(env.stripeSecretKey, {
-  apiVersion: "2024-06-20",
+  apiVersion: "2025-02-24.acacia",
 })
 
 // Stripe webhook endpoint - debe recibir el body raw sin parsear
@@ -82,6 +84,7 @@ router.post(
           console.error("Error updating payment status:", updateError)
         } else {
           console.log(`Payment ${payment.id} marked as paid via webhook`)
+          await notifyPaymentReceipt(payment.id)
         }
         break
       }
@@ -126,6 +129,7 @@ router.post(
           console.error("Error updating payment status:", updateError)
         } else {
           console.log(`Payment ${payment.id} marked as paid via payment_intent webhook`)
+          await notifyPaymentReceipt(payment.id)
         }
         break
       }
@@ -166,6 +170,7 @@ router.post(
           console.error("Error updating payment status:", updateError)
         } else {
           console.log(`Payment ${payment.id} marked as paid via async webhook`)
+          await notifyPaymentReceipt(payment.id)
         }
         break
       }
@@ -181,3 +186,24 @@ router.post(
 
 export const webhooksRouter = router
 
+async function notifyPaymentReceipt(paymentId: string) {
+  try {
+    const payment = await getAdminPaymentById(paymentId)
+    if (!payment || !payment.clientEmail) {
+      return
+    }
+
+    await sendPaymentReceiptEmail({
+      to: payment.clientEmail,
+      name: payment.clientName ?? "Cliente Terrazea",
+      concept: payment.concept,
+      amountCents: payment.amountCents,
+      currency: payment.currency,
+      paidAt: payment.paidAt ?? new Date().toISOString(),
+      projectName: payment.projectName ?? null,
+      receiptUrl: payment.paymentLink,
+    })
+  } catch (error) {
+    console.error("[email] No se pudo enviar el recibo del pago", error)
+  }
+}
