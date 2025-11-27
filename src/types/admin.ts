@@ -134,6 +134,7 @@ export interface AdminProjectDetails {
     estimatedDelivery: string | null
     locationCity: string | null
     locationNotes: string | null
+    locationMapUrl: string | null
     clientId: string | null
     clientName: string | null
     managerId: string | null
@@ -209,9 +210,48 @@ export interface AdminDashboardProjectProgress {
   status: string
 }
 
+export interface AdminDashboardProjectLocation {
+  id: string
+  name: string
+  city: string | null
+  mapUrl: string | null
+}
+
 export interface AdminDashboardManager {
   id: string
   name: string
+}
+
+export interface AdminPaymentRecord {
+  id: string
+  projectId: string
+  projectName: string | null
+  projectSlug: string | null
+  clientId: string
+  clientName: string | null
+  concept: string
+  description: string | null
+  status: "draft" | "pending" | "paid" | "failed" | "canceled"
+  amountCents: number
+  currency: string
+  dueDate: string | null
+  paymentLink: string | null
+  stripePaymentIntentId: string | null
+  stripeCheckoutSessionId: string | null
+  stripeCustomerId: string | null
+  stripeInvoiceId: string | null
+  createdBy: string | null
+  sentAt: string | null
+  paidAt: string | null
+  createdAt: string
+  updatedAt: string
+  metadata: Record<string, unknown>
+  clientEmail: string | null
+  clientStripeCustomerId: string | null
+  proposalDocumentId: string | null
+  proposalDocumentName: string | null
+  proposalDocumentUrl: string | null
+  budgetId?: string | null
 }
 
 export interface AdminDashboardData {
@@ -219,6 +259,7 @@ export interface AdminDashboardData {
   upcomingMilestones: AdminDashboardMilestone[]
   alerts: AdminDashboardAlert[]
   projectsProgress: AdminDashboardProjectProgress[]
+  projectLocations?: AdminDashboardProjectLocation[]
   filters: {
     statuses: string[]
     managers: AdminDashboardManager[]
@@ -516,4 +557,42 @@ export interface AdminPaymentsSummary {
 export interface AdminPaymentsResponse {
   payments: AdminPaymentRecord[]
   summary: AdminPaymentsSummary
+}
+
+export interface AdminBudgetProduct {
+  id: string
+  name: string
+  description: string | null
+  unitPrice: number
+  imagePath: string | null
+  imageUrl: string | null
+  tags: string[]
+  createdAt: string
+  updatedAt: string
+}
+
+export interface AdminBudgetLine {
+  id: string
+  parentId?: string | null
+  productId?: string | null
+  name: string
+  price: string
+  quantity: number
+  imageDataUrl?: string | null
+  notes?: string | null
+}
+
+export interface AdminBudgetRecord {
+  id: string
+  title: string
+  clientType: "existing" | "new"
+  clientId?: string | null
+  clientName: string
+  clientEmail?: string | null
+  items: AdminBudgetLine[]
+  notes?: string | null
+  total: number
+  taxRate: number
+  createdAt: string
+  updatedAt: string
 }

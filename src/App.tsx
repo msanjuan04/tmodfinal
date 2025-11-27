@@ -22,6 +22,7 @@ import { AdminMessagesPage } from "./routes/admin/Messages"
 import { LandingPage } from "./routes/home/LandingPage"
 import { AdminProjectPage } from "./routes/admin/ProjectPage"
 import { AdminPaymentsPage } from "./routes/admin/Payments"
+import { AdminBudgetsPage } from "./routes/admin/Budgets"
 
 export default function App() {
   return (
@@ -67,6 +68,7 @@ export default function App() {
         <Route path="team" element={<AdminTeamPage />} />
         <Route path="projects/:projectSlug" element={<AdminProjectPage />} />
         <Route path="projects" element={<AdminProjectsPage />} />
+        <Route path="budgets" element={<AdminBudgetsPage />} />
         <Route path="payments" element={<AdminPaymentsPage />} />
         <Route path="documents" element={<AdminDocumentsPage />} />
         <Route path="messages" element={<AdminMessagesPage />} />

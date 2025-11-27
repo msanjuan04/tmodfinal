@@ -131,10 +131,10 @@
 
   .terrazea-day-picker {
     width: 100%;
-    --rdp-cell-size: clamp(44px, calc((100% - 32px) / 7), 68px);
+    --rdp-cell-size: clamp(52px, calc((100% - 32px) / 7), 80px);
     background: #f8f7f4;
     border-radius: 1.5rem;
-    padding: 1.25rem;
+    padding: 1.5rem;
   }
 
   .terrazea-day-picker .rdp {
@@ -225,5 +225,37 @@
   .terrazea-day-picker .rdp-day_selected.rdp-day_hasEvents::after,
   .terrazea-day-selected.terrazea-day-has-events::after {
     background-color: #34d399;
+  }
+}
+
+@media print {
+  @page {
+    margin: 10mm;
+  }
+
+  body {
+    margin: 0;
+    padding: 0;
+    background: white;
+  }
+
+  /* Ocultar toda la interfaz y dejar solo el documento del presupuesto */
+  body * {
+    visibility: hidden;
+  }
+
+  #budget-preview,
+  #budget-preview * {
+    visibility: visible;
+  }
+
+  #budget-preview {
+    position: static;
+    margin: 0 auto;
+    padding: 24px;
+    max-width: 800px;
+    box-shadow: none !important;
+    border: none !important;
+    page-break-after: avoid;
   }
 }

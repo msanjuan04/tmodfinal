@@ -18,6 +18,13 @@ import {
   updateProjectEvent,
 } from "../../lib/supabase/project-events"
 import {
+  createPersonalEvent,
+  deletePersonalEvent,
+  listAdminPersonalEvents,
+  personalEventWriteSchema,
+  updatePersonalEvent,
+} from "../../lib/supabase/personal-events"
+import {
   addTaskToCalendar,
   bulkUpdateProjectTasks,
   createProjectTask,
@@ -74,8 +81,20 @@ import {
 } from "../../lib/supabase/admin-payments"
 import { ensureStripeCustomer, createCheckoutSessionForPayment } from "../../lib/payments/stripe"
 import { env } from "../config/env"
-import { sendClientWelcomeEmail, sendDocumentSharedEmail, sendPaymentRequestEmail } from "../services/email"
+import { sendClientWelcomeEmail, sendDocumentSharedEmail, sendNewClientProjectEmail, sendPaymentRequestEmail } from "../services/email"
 import { createProjectNotification, listAdminNotifications, markAdminNotificationRead } from "../../lib/supabase/notifications"
+import {
+  createBudgetProduct,
+  deleteBudgetProduct,
+  listBudgetProducts,
+  updateBudgetProduct,
+} from "../../lib/supabase/budget-products"
+import {
+  createAdminBudget,
+  deleteAdminBudget,
+  listAdminBudgets,
+  updateAdminBudget,
+} from "../../lib/supabase/admin-budgets"
 import type { AdminPaymentRecord } from "@app/types/admin"
 
 type ProjectTeamRole = (typeof PROJECT_TEAM_ROLES)[number]
@@ -140,6 +159,11 @@ const createProjectSchema = z.object({
     .string()
     .optional()
     .transform((value) => (value && value.length > 0 ? value : undefined)),
+  locationMapUrl: z
+    .string()
+    .optional()
+    .or(z.literal(""))
+    .transform((value) => (value && value.trim().length > 0 ? value.trim() : undefined)),
   clientId: z.string().uuid().optional(),
   createNewClient: z.boolean().optional(),
   newClientFullName: z.string().optional(),
@@ -215,6 +239,7 @@ const createPaymentSchema = z.object({
     }),
   dueDate: optionalDate,
   attachment: attachmentSchema.optional(),
+  budgetId: z.string().uuid().optional(),
 })
 
 const updatePaymentSchema = z
@@ -667,6 +692,58 @@ const timelineSchema = z.object({
   eventType: z.string().optional(),
 })
 
+const budgetProductSchema = z.object({
+  name: z.string().min(1).max(200),
+  description: z
+    .string()
+    .max(2000)
+    .optional()
+    .transform((value) => (value && value.trim().length > 0 ? value.trim() : undefined)),
+  unitPrice: amountSchema,
+  imageDataUrl: z
+    .string()
+    .min(10)
+    .optional(),
+  tags: z
+    .array(z.string())
+    .optional()
+    .transform((value) =>
+      (value ?? []).map((tag) => tag.trim()).filter((tag) => tag.length > 0),
+    ),
+})
+
+const budgetLineSchema = z.object({
+  id: z.string().min(1),
+  parentId: z.string().optional().nullable(),
+  productId: z.string().optional().nullable(),
+  name: z.string().min(1),
+  price: z.string().min(1),
+  quantity: z.number().nonnegative(),
+  imageDataUrl: z.string().optional().nullable(),
+  notes: z.string().optional().nullable(),
+})
+
+const budgetSchema = z.object({
+  title: z.string().min(1).max(200),
+  clientType: z.enum(["existing", "new"]),
+  clientId: z.string().uuid().optional().nullable(),
+  clientName: z.string().min(1).max(200),
+  clientEmail: z
+    .string()
+    .email()
+    .optional()
+    .or(z.literal(""))
+    .transform((value) => (value && value.trim().length > 0 ? value.trim() : undefined)),
+  items: z.array(budgetLineSchema).min(1),
+  notes: z
+    .string()
+    .optional()
+    .or(z.literal(""))
+    .transform((value) => (value && value.trim().length > 0 ? value.trim() : undefined)),
+  total: z.number().nonnegative(),
+  taxRate: z.number().min(0).max(100),
+})
+
 function normalizeDateTime(value: unknown) {
   if (typeof value !== "string" || value.length === 0) {
     return undefined
@@ -694,6 +771,26 @@ function parseEventPayload(body: unknown) {
   }
 
   const parsed = projectEventWriteSchema.safeParse(normalized)
+  if (!parsed.success) {
+    return { success: false as const, error: parsed.error.flatten().fieldErrors }
+  }
+  return { success: true as const, data: parsed.data }
+}
+
+function parsePersonalEventPayload(body: unknown) {
+  if (!body || typeof body !== "object") {
+    return { success: false as const, error: "invalid" }
+  }
+
+  const raw = body as Record<string, unknown>
+
+  const normalized = {
+    ...raw,
+    startsAt: normalizeDateTime(raw.startsAt) ?? raw.startsAt,
+    endsAt: raw.endsAt === null ? null : normalizeDateTime(raw.endsAt) ?? raw.endsAt,
+  }
+
+  const parsed = personalEventWriteSchema.safeParse(normalized)
   if (!parsed.success) {
     return { success: false as const, error: parsed.error.flatten().fieldErrors }
   }
@@ -791,6 +888,55 @@ router.delete(
   "/events/:eventId",
   asyncHandler(async (request, response) => {
     await deleteProjectEvent(request.params.eventId)
+    response.status(204).end()
+  }),
+)
+
+router.get(
+  "/personal-events",
+  asyncHandler(async (request, response) => {
+    const session = requireAdminSession(request)
+    const events = await listAdminPersonalEvents(session.userId)
+    response.json({ events })
+  }),
+)
+
+router.post(
+  "/personal-events",
+  asyncHandler(async (request, response) => {
+    const payload = parsePersonalEventPayload(request.body)
+    if (!payload.success) {
+      response.status(400).json({ message: "Datos de evento personal inválidos", errors: payload.error })
+      return
+    }
+
+    const session = requireAdminSession(request)
+    const event = await createPersonalEvent(payload.data, session.userId)
+    response.status(201).json(event)
+  }),
+)
+
+router.put(
+  "/personal-events/:eventId",
+  asyncHandler(async (request, response) => {
+    const payload = parsePersonalEventPayload(request.body)
+    if (!payload.success) {
+      response.status(400).json({ message: "Datos de evento personal inválidos", errors: payload.error })
+      return
+    }
+
+    const session = requireAdminSession(request)
+    const eventId = request.params.eventId
+    const event = await updatePersonalEvent(eventId, payload.data, session.userId)
+    response.json(event)
+  }),
+)
+
+router.delete(
+  "/personal-events/:eventId",
+  asyncHandler(async (request, response) => {
+    const session = requireAdminSession(request)
+    await deletePersonalEvent(request.params.eventId, session.userId)
     response.status(204).end()
   }),
 )
@@ -989,19 +1135,20 @@ router.post(
       return
     }
 
-    const ensured = await ensureClientAppUser(supabase, data.id, { projectCode: null })
-    if (ensured?.shouldInvite) {
-      const portalUrl = `${clientPortalBaseUrl()}/client/setup-password`
-      try {
-        await sendClientWelcomeEmail({
-          to: ensured.clientEmail,
-          name: ensured.clientName,
-          temporaryPassword: ensured.temporaryPassword,
-          projectCode: ensured.projectCode,
-        })
-      } catch (emailError) {
-        console.error("[email] No se pudo enviar la invitación al cliente", emailError)
-      }
+      const ensured = await ensureClientAppUser(supabase, data.id, { projectCode: null })
+      if (ensured?.shouldInvite) {
+        const portalUrl = `${clientPortalBaseUrl()}/client/setup-password`
+        try {
+          await sendClientWelcomeEmail({
+            to: ensured.clientEmail,
+            name: ensured.clientName,
+            temporaryPassword: ensured.temporaryPassword,
+            projectCode: ensured.projectCode,
+            forceSend: true,
+          })
+        } catch (emailError) {
+          console.error("[email] No se pudo enviar la invitación al cliente", emailError)
+        }
 
       try {
         await createProjectNotification({
@@ -1057,7 +1204,7 @@ router.post(
       return
     }
 
-    const { projectId, concept, description, amount, currency, dueDate, attachment } = parsed.data
+    const { projectId, concept, description, amount, currency, dueDate, attachment, budgetId } = parsed.data
     const amountCents = Math.round(amount * 100)
     let proposalDocumentId: string | null = null
 
@@ -1091,6 +1238,7 @@ router.post(
         dueDate,
         createdBy: session.userId,
         proposalDocumentId,
+        budgetId,
       })
       let sentPayment = payment
       try {
@@ -1267,6 +1415,8 @@ router.post(
 
     try {
       let clientId = data.clientId
+      let createdNewClient = false
+      let newClientContact: { name: string; email: string } | null = null
 
       if (data.createNewClient) {
         const clientName = data.newClientFullName?.trim()
@@ -1299,7 +1449,9 @@ router.post(
           return
         }
 
+        createdNewClient = true
         clientId = insertedClient.id
+        newClientContact = { name: clientName, email: clientEmail }
       }
 
       if (!clientId) {
@@ -1334,12 +1486,29 @@ router.post(
         estimatedDelivery: data.estimatedDelivery ?? null,
         locationCity: data.locationCity ?? null,
         locationNotes: data.locationNotes ?? null,
+        locationMapUrl: data.locationMapUrl ?? null,
         managerId: data.managerId ?? null,
         assignments,
       })
 
+      if (createdNewClient && newClientContact) {
+        try {
+          await sendNewClientProjectEmail({
+            to: newClientContact.email,
+            name: newClientContact.name,
+            projectName: project.name,
+            projectCode: project.code,
+            forceSend: true,
+          })
+        } catch (emailError) {
+          console.error("[email] No se pudo enviar el aviso del nuevo proyecto al cliente", emailError)
+        }
+      }
+
       const ensured = await ensureClientAppUser(supabase, clientId, { projectCode: project.code })
-      if (ensured?.shouldInvite) {
+      const shouldInviteClient = Boolean(ensured && (ensured.shouldInvite || createdNewClient))
+      const shouldForceClientInvite = Boolean(ensured?.shouldInvite || createdNewClient)
+      if (shouldInviteClient && ensured) {
         const portalUrl = `${clientPortalBaseUrl()}/client/setup-password`
         try {
           await sendClientWelcomeEmail({
@@ -1347,6 +1516,7 @@ router.post(
             name: ensured.clientName,
             temporaryPassword: ensured.temporaryPassword,
             projectCode: ensured.projectCode,
+            forceSend: shouldForceClientInvite,
           })
         } catch (emailError) {
           console.error("[email] No se pudo enviar invitación del proyecto", emailError)
@@ -1413,6 +1583,7 @@ router.patch(
       estimatedDelivery: payload.estimatedDelivery,
       locationCity: payload.locationCity,
       locationNotes: payload.locationNotes,
+      locationMapUrl: payload.locationMapUrl,
       managerId: payload.managerId,
       assignments,
     })
@@ -1795,6 +1966,127 @@ router.get(
     const limit = Number.isFinite(limitParam) ? limitParam : undefined
     const feed = await listAdminNotifications({ limit })
     response.json(feed)
+  }),
+)
+
+// Catálogo de productos de presupuesto --------------------------------------
+
+router.get(
+  "/budget-products",
+  asyncHandler(async (_request, response) => {
+    const products = await listBudgetProducts()
+    response.json({ products })
+  }),
+)
+
+router.post(
+  "/budget-products",
+  asyncHandler(async (request, response) => {
+    const parsed = budgetProductSchema.safeParse(request.body)
+    if (!parsed.success) {
+      response.status(400).json({ message: "Datos de producto inválidos", errors: parsed.error.flatten().fieldErrors })
+      return
+    }
+
+    const product = await createBudgetProduct(parsed.data)
+    response.status(201).json({ product })
+  }),
+)
+
+router.patch(
+  "/budget-products/:productId",
+  asyncHandler(async (request, response) => {
+    const { productId } = request.params
+    const parsed = budgetProductSchema.partial().safeParse(request.body)
+    if (!parsed.success) {
+      response.status(400).json({ message: "Datos de producto inválidos", errors: parsed.error.flatten().fieldErrors })
+      return
+    }
+
+    const product = await updateBudgetProduct(productId, parsed.data)
+    response.json({ product })
+  }),
+)
+
+router.delete(
+  "/budget-products/:productId",
+  asyncHandler(async (request, response) => {
+    const { productId } = request.params
+    await deleteBudgetProduct(productId)
+    response.status(204).end()
+  }),
+)
+
+// Presupuestos guardados ------------------------------------------------------
+
+router.get(
+  "/budgets",
+  asyncHandler(async (request, response) => {
+    requireAdminSession(request)
+    const budgets = await listAdminBudgets()
+    response.json({ budgets })
+  }),
+)
+
+router.post(
+  "/budgets",
+  asyncHandler(async (request, response) => {
+    const session = requireAdminSession(request)
+    const parsed = budgetSchema.safeParse(request.body)
+    if (!parsed.success) {
+      response.status(400).json({ message: "Datos de presupuesto inválidos", errors: parsed.error.flatten().fieldErrors })
+      return
+    }
+
+    const budget = await createAdminBudget({
+      title: parsed.data.title,
+      clientType: parsed.data.clientType,
+      clientId: parsed.data.clientId ?? null,
+      clientName: parsed.data.clientName,
+      clientEmail: parsed.data.clientEmail ?? null,
+      items: parsed.data.items,
+      notes: parsed.data.notes ?? null,
+      total: parsed.data.total,
+      taxRate: parsed.data.taxRate,
+      createdBy: session.userId,
+    })
+
+    response.status(201).json({ budget })
+  }),
+)
+
+router.put(
+  "/budgets/:budgetId",
+  asyncHandler(async (request, response) => {
+    requireAdminSession(request)
+    const { budgetId } = request.params
+    if (!budgetId) {
+      response.status(400).json({ message: "Presupuesto no especificado" })
+      return
+    }
+
+    const parsed = budgetSchema.partial().safeParse(request.body)
+    if (!parsed.success) {
+      response.status(400).json({ message: "Datos de presupuesto inválidos", errors: parsed.error.flatten().fieldErrors })
+      return
+    }
+
+    const budget = await updateAdminBudget(budgetId, parsed.data)
+    response.json({ budget })
+  }),
+)
+
+router.delete(
+  "/budgets/:budgetId",
+  asyncHandler(async (request, response) => {
+    requireAdminSession(request)
+    const { budgetId } = request.params
+    if (!budgetId) {
+      response.status(400).json({ message: "Presupuesto no especificado" })
+      return
+    }
+    await deleteAdminBudget(budgetId)
+    response.status(204).end()
   }),
 )
 

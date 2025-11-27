@@ -15,6 +15,8 @@ import type {
   AdminProjectTeamMember,
   AdminPaymentRecord,
   AdminPaymentsResponse,
+  AdminBudgetProduct,
+  AdminBudgetRecord,
 } from "@app/types/admin"
 import type { DocumentsData } from "@app/types/documents"
 import type { MessagesData } from "@/lib/supabase/queries"
@@ -197,6 +199,7 @@ export interface CreateAdminPaymentPayload {
     sizeLabel?: string
     content: string
   }
+  budgetId?: string | null
 }
 
 export interface UpdateAdminPaymentPayload {
@@ -453,4 +456,70 @@ export async function fetchAdminNotifications(options?: { limit?: number }): Pro
 
 export async function markAdminNotificationRead(notificationId: string) {
   await api.post(`/admin/notifications/${notificationId}/read`)
+}
+
+// Presupuestos: catálogo de productos ---------------------------------------
+
+export interface CreateAdminBudgetProductPayload {
+  name: string
+  description?: string
+  unitPrice: number
+  tags?: string[]
+  imageDataUrl?: string | null
+}
+
+export interface UpdateAdminBudgetProductPayload {
+  name?: string
+  description?: string | null
+  unitPrice?: number
+  tags?: string[]
+  imageDataUrl?: string | null
+}
+
+export async function fetchAdminBudgetProducts(): Promise<AdminBudgetProduct[]> {
+  const response = await api.get<{ products: AdminBudgetProduct[] }>("/admin/budget-products")
+  return response.data.products
+}
+
+export async function createAdminBudgetProduct(payload: CreateAdminBudgetProductPayload): Promise<AdminBudgetProduct> {
+  const response = await api.post<{ product: AdminBudgetProduct }>("/admin/budget-products", payload)
+  return response.data.product
+}
+
+export async function updateAdminBudgetProduct(
+  productId: string,
+  payload: UpdateAdminBudgetProductPayload,
+): Promise<AdminBudgetProduct> {
+  const response = await api.patch<{ product: AdminBudgetProduct }>(`/admin/budget-products/${productId}`, payload)
+  return response.data.product
+}
+
+export async function deleteAdminBudgetProduct(productId: string) {
+  await api.delete(`/admin/budget-products/${productId}`)
+}
+
+// Presupuestos guardados ------------------------------------------------------
+
+export async function fetchAdminBudgets(): Promise<AdminBudgetRecord[]> {
+  const response = await api.get<{ budgets: AdminBudgetRecord[] }>("/admin/budgets")
+  return response.data.budgets
+}
+
+export async function createAdminBudget(
+  payload: Omit<AdminBudgetRecord, "id" | "createdAt" | "updatedAt" | "total" | "clientId"> & { total?: number; clientId?: string | null },
+): Promise<AdminBudgetRecord> {
+  const response = await api.post<{ budget: AdminBudgetRecord }>("/admin/budgets", payload)
+  return response.data.budget
+}
+
+export async function updateAdminBudget(
+  budgetId: string,
+  payload: Partial<Omit<AdminBudgetRecord, "id" | "createdAt" | "updatedAt">>,
+): Promise<AdminBudgetRecord> {
+  const response = await api.put<{ budget: AdminBudgetRecord }>(`/admin/budgets/${budgetId}`, payload)
+  return response.data.budget
+}
+
+export async function deleteAdminBudget(budgetId: string) {
+  await api.delete(`/admin/budgets/${budgetId}`)
 }

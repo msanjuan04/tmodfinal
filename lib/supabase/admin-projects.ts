@@ -34,6 +34,7 @@ const PROJECT_DETAIL_COLUMNS = [
   "estimated_delivery",
   "location_city",
   "location_notes",
+  "map_url",
   "created_at",
   "updated_at",
   "clients(full_name)",
@@ -89,6 +90,7 @@ export interface AdminProjectUpsertInput {
   estimatedDelivery?: string | null
   locationCity?: string | null
   locationNotes?: string | null
+  locationMapUrl?: string | null
   managerId?: string | null
   assignments?: TeamAssignmentsMap
 }
@@ -142,6 +144,7 @@ export async function createAdminProjectRecord(
         estimated_delivery: payload.estimatedDelivery ?? null,
         location_city: payload.locationCity ?? null,
         location_notes: payload.locationNotes ?? null,
+        map_url: payload.locationMapUrl ?? null,
       })
       .select("id, slug")
       .maybeSingle()
@@ -178,6 +181,7 @@ export async function updateAdminProjectBasics(projectId: string, payload: Parti
   if (payload.estimatedDelivery !== undefined) update.estimated_delivery = payload.estimatedDelivery ?? null
   if (payload.locationCity !== undefined) update.location_city = payload.locationCity ?? null
   if (payload.locationNotes !== undefined) update.location_notes = payload.locationNotes ?? null
+  if (payload.locationMapUrl !== undefined) update.map_url = payload.locationMapUrl ?? null
   if (payload.slug !== undefined && payload.slug.trim().length > 0) update.slug = slugify(payload.slug)
 
   const { error } = await supabase.from("projects").update(update).eq("id", projectId)
@@ -726,6 +730,7 @@ export async function getAdminProjectDetail(projectRef: string): Promise<AdminPr
       estimatedDelivery: projectRow.estimated_delivery ?? null,
       locationCity: projectRow.location_city ?? null,
       locationNotes: projectRow.location_notes ?? null,
+      locationMapUrl: projectRow.map_url ?? null,
       clientName: clientInfo?.full_name ?? null,
       clientId: projectRow.client_id ?? null,
       managerId: assignments.find((assignment) => assignment.role === "director")?.memberId ?? null,

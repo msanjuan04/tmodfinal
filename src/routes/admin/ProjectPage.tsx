@@ -1095,6 +1095,7 @@ function SettingsSection({ detail, onUpdated, onDelete, deleting }: SettingsSect
   const [estimatedDelivery, setEstimatedDelivery] = useState(detail.project.estimatedDelivery ?? "")
   const [locationCity, setLocationCity] = useState(detail.project.locationCity ?? "")
   const [locationNotes, setLocationNotes] = useState(detail.project.locationNotes ?? "")
+  const [locationMapUrl, setLocationMapUrl] = useState(detail.project.locationMapUrl ?? "")
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -1106,8 +1107,12 @@ function SettingsSection({ detail, onUpdated, onDelete, deleting }: SettingsSect
         estimatedDelivery,
         locationCity,
         locationNotes,
+        locationMapUrl,
       })
       toast.success("Proyecto actualizado")
+      if (locationMapUrl.trim().length > 0) {
+        toast.success("Ubicación guardada. El proyecto aparecerá en el mapa del panel general.")
+      }
       await onUpdated()
     } catch (error) {
       console.error(error)
@@ -1171,6 +1176,19 @@ function SettingsSection({ detail, onUpdated, onDelete, deleting }: SettingsSect
           <div className="space-y-2">
             <Label className="text-sm text-[#2F4F4F]">Notas</Label>
             <Textarea value={locationNotes} onChange={(event) => setLocationNotes(event.target.value)} className="border-[#E8E6E0]" />
+          </div>
+          <div className="space-y-2">
+            <Label className="text-sm text-[#2F4F4F]">Coordenadas para el mapa (latitud, longitud)</Label>
+            <Input
+              value={locationMapUrl}
+              onChange={(event) => setLocationMapUrl(event.target.value)}
+              className="border-[#E8E6E0] font-mono text-xs"
+              placeholder="Ejemplo: 41.3902, 2.1540"
+            />
+            <p className="text-[11px] text-[#6B7280]">
+              En Google Maps haz clic derecho en el punto del proyecto → <span className="font-semibold">“¿Qué hay aquí?”</span> y copia las
+              coordenadas.
+            </p>
           </div>
           <div className="flex justify-end">
             <Button type="submit" className="bg-[#2F4F4F]" disabled={saving}>

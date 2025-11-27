@@ -139,6 +139,25 @@ create table public.client_notes (
 );
 create index client_notes_client_id_idx on public.client_notes(client_id, created_at desc);
 
+-- Presupuestos guardados ------------------------------------------------------
+
+create table public.budgets (
+  id uuid primary key default uuid_generate_v4(),
+  title text not null,
+  client_id uuid references public.clients(id) on delete set null,
+  client_type text not null default 'existing' check (client_type in ('existing', 'new')),
+  client_name text not null,
+  client_email text,
+  items jsonb not null,
+  notes text,
+  total numeric(12,2) not null default 0,
+  tax_rate numeric(5,2) not null default 21,
+  created_by uuid references public.app_users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index budgets_created_at_idx on public.budgets(created_at desc);
+
 create or replace function public.verify_password(password_input text, password_hash text)
 returns boolean
 language sql

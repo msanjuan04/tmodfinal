@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useEffect, useRef, useState, useTransition } from "react"
 import { format } from "date-fns"
 
 import { Button } from "@/components/ui/button"
@@ -17,21 +17,40 @@ interface EventFormModalProps {
   event?: ProjectEvent
   trigger?: React.ReactNode
   onSuccess?: () => void
+  defaultDate?: Date
 }
 
-export function EventFormModal({ projectId, event, trigger, onSuccess }: EventFormModalProps) {
+export function EventFormModal({ projectId, event, trigger, onSuccess, defaultDate }: EventFormModalProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [pending, startTransition] = useTransition()
-  const [formData, setFormData] = useState<ProjectEventWriteInput>({
-    projectId,
-    title: event?.title ?? "",
-    description: event?.description ?? "",
-    eventType: event?.eventType ?? "general",
-    startsAt: event?.startsAt ? format(new Date(event.startsAt), "yyyy-MM-dd'T'HH:mm") : "",
-    endsAt: event?.endsAt ? format(new Date(event.endsAt), "yyyy-MM-dd'T'HH:mm") : null,
-    isAllDay: event?.isAllDay ?? false,
-    visibility: event?.visibility ?? "client_visible",
+  const [formData, setFormData] = useState<ProjectEventWriteInput>(() => {
+    const baseStart = event?.startsAt
+      ? new Date(event.startsAt)
+      : defaultDate
+
+    return {
+      projectId,
+      title: event?.title ?? "",
+      description: event?.description ?? "",
+      eventType: event?.eventType ?? "general",
+      startsAt: baseStart ? format(baseStart, "yyyy-MM-dd'T'HH:mm") : "",
+      endsAt: event?.endsAt ? format(new Date(event.endsAt), "yyyy-MM-dd'T'HH:mm") : null,
+      isAllDay: event?.isAllDay ?? false,
+      visibility: event?.visibility ?? "client_visible",
+    }
   })
+
+  const wasOpenRef = useRef(false)
+
+  useEffect(() => {
+    if (!event && isOpen && !wasOpenRef.current && defaultDate) {
+      setFormData((prev) => ({
+        ...prev,
+        startsAt: format(defaultDate, "yyyy-MM-dd'T'HH:mm"),
+      }))
+    }
+    wasOpenRef.current = isOpen
+  }, [isOpen, event, defaultDate])
 
   const isEditing = Boolean(event)
   const endsAtValue = formData.endsAt ?? ""
@@ -123,7 +142,16 @@ export function EventFormModal({ projectId, event, trigger, onSuccess }: EventFo
             <select
               id="eventType"
               value={formData.eventType}
-              onChange={(e) => setFormData(prev => ({ ...prev, eventType: e.target.value }))}
+              onChange={(e) =>
+                setFormData((prev) => {
+                  const nextType = e.target.value
+                  // Si es una nota interna, forzamos visibilidad interna por defecto
+                  if (nextType === "nota_interna" && prev.visibility !== "internal") {
+                    return { ...prev, eventType: nextType, visibility: "internal" }
+                  }
+                  return { ...prev, eventType: nextType }
+                })
+              }
               className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:ring-2 focus:ring-ring focus:ring-offset-2"
             >
               <option value="general">General</option>
@@ -132,6 +160,7 @@ export function EventFormModal({ projectId, event, trigger, onSuccess }: EventFo
               <option value="administrativo">Administrativo</option>
               <option value="interno">Interno</option>
               <option value="entrega">Entrega</option>
+              <option value="nota_interna">Nota interna (solo equipo)</option>
             </select>
           </div>
 

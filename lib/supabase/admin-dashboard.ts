@@ -77,6 +77,8 @@ interface ProjectRecord {
   estimated_delivery: string | null
   created_at: string
   client_id: string
+  location_city?: string | null
+  map_url?: string | null
   project_team_members: Array<{
     team_member_id: string
     is_primary: boolean
@@ -90,7 +92,7 @@ export async function getAdminDashboardData(filters: AdminDashboardFilters): Pro
   const { data: projectRows, error: projectError } = await supabase
     .from("projects")
     .select(
-      "id, name, status, progress_percent, estimated_delivery, created_at, client_id, project_team_members(team_member_id, is_primary, team_members(full_name))",
+      "id, name, status, progress_percent, estimated_delivery, created_at, client_id, location_city, map_url, project_team_members(team_member_id, is_primary, team_members(full_name))",
     )
     .order("created_at", { ascending: false })
 
@@ -199,6 +201,15 @@ export async function getAdminDashboardData(filters: AdminDashboardFilters): Pro
     .sort((a, b) => b.progressPercent - a.progressPercent)
     .slice(0, 8)
 
+  const projectLocations = filteredProjects
+    .filter((project) => project.location_city || project.map_url)
+    .map((project) => ({
+      id: project.id,
+      name: project.name,
+      city: project.location_city ?? null,
+      mapUrl: project.map_url ?? null,
+    }))
+
   const data: AdminDashboardData = {
     summary: {
       projects: {
@@ -221,6 +232,7 @@ export async function getAdminDashboardData(filters: AdminDashboardFilters): Pro
     upcomingMilestones,
     alerts,
     projectsProgress,
+    projectLocations,
     filters: {
       statuses: uniqueStatuses,
       managers: Array.from(managerMap.entries()).map(([id, name]) => ({ id, name })),

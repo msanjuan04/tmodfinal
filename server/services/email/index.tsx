@@ -9,6 +9,7 @@ import {
   DocumentSharedEmail,
   EventReminderEmail,
   MessageNotificationEmail,
+  NewClientProjectEmail,
   PaymentReceiptEmail,
   PaymentRequestEmail,
 } from "../../emails"
@@ -24,9 +25,10 @@ interface SendEmailInput {
   bcc?: string | string[] | null
   replyTo?: string
   retries?: number
+  forceSend?: boolean
 }
 
-export async function sendEmail({ to, subject, react, text, bcc, replyTo, retries = 2 }: SendEmailInput) {
+export async function sendEmail({ to, subject, react, text, bcc, replyTo, retries = 2, forceSend = false }: SendEmailInput) {
   if (!react && !text) {
     throw new Error("sendEmail requiere contenido react o text.")
   }
@@ -56,15 +58,30 @@ export async function sendEmail({ to, subject, react, text, bcc, replyTo, retrie
     throw new Error("sendEmail requiere al menos html o text.")
   }
 
-  if (isDryRun) {
+  if (isDryRun && !forceSend) {
     console.info("[email:dry-run]", { to, subject })
-    return
+    return null
   }
+
+  console.log(`[email] Enviando correo a ${to} (forceSend: ${forceSend}, dryRun: ${isDryRun})`)
 
   for (let attempt = 1; attempt <= Math.max(retries, 1); attempt += 1) {
     try {
-      await resend.emails.send(payload)
-      return
+      const result = await resend.emails.send(payload)
+      
+      // Resend puede devolver errores en el objeto result en lugar de lanzar excepciones
+      if (result.error) {
+        const errorMessage = `Resend API error: ${result.error.message || result.error.name || "Unknown error"}`
+        console.error(`[email] Error de Resend (intento ${attempt}):`, result.error)
+        if (attempt === retries) {
+          throw new Error(errorMessage)
+        }
+        await new Promise((resolve) => setTimeout(resolve, attempt * 500))
+        continue
+      }
+      
+      console.log(`[email] Correo enviado exitosamente (intento ${attempt})`, result.data)
+      return result
     } catch (error) {
       console.error(`[email] Falló intento ${attempt} (${subject})`, error)
       if (attempt === retries) {
@@ -75,7 +92,13 @@ export async function sendEmail({ to, subject, react, text, bcc, replyTo, retrie
   }
 }
 
-export async function sendClientWelcomeEmail(params: { to: string; name: string; temporaryPassword?: string; projectCode?: string | null }) {
+export async function sendClientWelcomeEmail(params: {
+  to: string
+  name: string
+  temporaryPassword?: string
+  projectCode?: string | null
+  forceSend?: boolean
+}) {
   const portalUrl = `${env.clientAppUrl.replace(/\/$/, "")}/client/setup-password`
   await sendEmail({
     to: params.to,
@@ -89,6 +112,29 @@ export async function sendClientWelcomeEmail(params: { to: string; name: string;
         supportEmail={env.resend.fromEmail}
       />
     ),
+    forceSend: params.forceSend ?? false,
+  })
+}
+
+export async function sendNewClientProjectEmail(params: {
+  to: string
+  name: string
+  projectName: string
+  projectCode: string
+  forceSend?: boolean
+}) {
+  return await sendEmail({
+    to: params.to,
+    subject: `Tu proyecto Terrazea: ${params.projectName}`,
+    react: (
+      <NewClientProjectEmail
+        name={params.name}
+        projectName={params.projectName}
+        projectCode={params.projectCode}
+        supportEmail={env.resend.fromEmail}
+      />
+    ),
+    forceSend: params.forceSend ?? false,
   })
 }
 

@@ -16,6 +16,7 @@ const MAX_PAYLOAD_SIZE = "150mb"
 const allowedOrigins = new Set([env.clientAppOrigin])
 
 if (env.nodeEnv !== "production") {
+  // Puertos típicos de Vite en desarrollo
   allowedOrigins.add("http://localhost:5173")
   allowedOrigins.add("http://127.0.0.1:5173")
   allowedOrigins.add("http://localhost:4173")
@@ -25,7 +26,23 @@ if (env.nodeEnv !== "production") {
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin || allowedOrigins.has(origin)) {
+      // Permitir peticiones sin origen (por ejemplo, cURL, Postman, etc.)
+      if (!origin) {
+        callback(null, true)
+        return
+      }
+
+      // Orígenes explícitamente permitidos
+      if (allowedOrigins.has(origin)) {
+        callback(null, true)
+        return
+      }
+
+      // En desarrollo, permitir cualquier localhost/127.0.0.1 en cualquier puerto
+      if (
+        env.nodeEnv !== "production" &&
+        (origin.startsWith("http://localhost:") || origin.startsWith("http://127.0.0.1:"))
+      ) {
         callback(null, true)
         return
       }

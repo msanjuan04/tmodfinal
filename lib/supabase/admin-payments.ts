@@ -68,6 +68,7 @@ type PaymentRow = {
   projects: Relation<{ name: string | null; slug: string | null }>
   clients: Relation<{ full_name: string | null; email: string | null; stripe_customer_id: string | null }>
   proposal_document: Relation<{ id: string; name: string | null; storage_path: string | null }>
+  budget_id?: string | null
 }
 
 function getSingleRelation<T>(relation: Relation<T>): T | null {
@@ -109,6 +110,7 @@ function mapPayment(row: PaymentRow, resolveDocumentUrl: (path: string | null) =
     proposalDocumentId: row.proposal_document_id ?? proposalDocument?.id ?? null,
     proposalDocumentName: proposalDocument?.name ?? null,
     proposalDocumentUrl: resolveDocumentUrl(documentPath),
+    budgetId: row.budget_id ?? null,
   }
 }
 
@@ -210,6 +212,7 @@ export interface CreateProjectPaymentInput {
   dueDate?: string | null
   createdBy: string
   proposalDocumentId?: string | null
+  budgetId?: string | null
 }
 
 export interface UpdateProjectPaymentInput {
@@ -252,6 +255,7 @@ export async function createProjectPayment(input: CreateProjectPaymentInput): Pr
       due_date: input.dueDate ?? null,
       created_by: input.createdBy,
       proposal_document_id: input.proposalDocumentId ?? null,
+      budget_id: input.budgetId ?? null,
     })
     .select("id")
     .maybeSingle()
@@ -265,6 +269,7 @@ export async function createProjectPayment(input: CreateProjectPaymentInput): Pr
   if (!payment) {
     throw new Error("No se pudo recuperar el pago creado")
   }
+  await syncPaymentCalendarEvents(payment.id)
   return payment
 }
 
@@ -307,6 +312,7 @@ export async function updateProjectPayment(paymentId: string, input: UpdateProje
 
   const updated = await getAdminPaymentById(paymentId)
   if (!updated) throw new Error("No se pudo recuperar el pago actualizado")
+  await syncPaymentCalendarEvents(updated.id)
   return updated
 }
 
@@ -314,4 +320,82 @@ export async function deleteProjectPayment(paymentId: string): Promise<void> {
   const supabase = createServerSupabaseClient()
   const { error } = await supabase.from("project_payments").delete().eq("id", paymentId)
   if (error) throw error
+  await deletePaymentCalendarEvents(paymentId)
 }
+
+function derivePaymentEventId(paymentId: string, kind: "due" | "paid"): string {
+  const clean = paymentId.replace(/-/g, "")
+  if (clean.length !== 32) return paymentId
+  const prefix = kind === "due" ? "1" : "2"
+  const mutated = (prefix + clean.slice(1)).toLowerCase()
+  return `${mutated.slice(0, 8)}-${mutated.slice(8, 12)}-${mutated.slice(12, 16)}-${mutated.slice(16, 20)}-${mutated.slice(20)}`
+}
+
+function paymentCalendarIsoFromDate(date: string | null, hour: number): string | null {
+  if (!date) return null
+  const parts = date.split("-").map((value) => Number.parseInt(value, 10))
+  if (parts.length !== 3 || parts.some((value) => Number.isNaN(value))) return null
+  const [year, month, day] = parts
+  return new Date(Date.UTC(year, month - 1, day, hour, 0, 0)).toISOString()
+}
+
+async function syncPaymentCalendarEventsForRecord(payment: AdminPaymentRecord) {
+  const supabase = createServerSupabaseClient()
+
+  const rows: Array<Record<string, unknown>> = []
+  const dueEventId = derivePaymentEventId(payment.id, "due")
+  const paidEventId = derivePaymentEventId(payment.id, "paid")
+
+  const dueIso = paymentCalendarIsoFromDate(payment.dueDate ?? null, 10)
+  if (dueIso) {
+    rows.push({
+      id: dueEventId,
+      project_id: payment.projectId,
+      title: `Vencimiento pago: ${payment.concept}`,
+      description: payment.description ?? null,
+      event_type: "payment_due",
+      starts_at: dueIso,
+      ends_at: null,
+      is_all_day: true,
+      visibility: "internal",
+    })
+  } else {
+    await supabase.from("project_events").delete().eq("id", dueEventId)
+  }
+
+  if (payment.paidAt) {
+    const paidIso = new Date(payment.paidAt).toISOString()
+    rows.push({
+      id: paidEventId,
+      project_id: payment.projectId,
+      title: `Pago recibido: ${payment.concept}`,
+      description: payment.description ?? null,
+      event_type: "payment_paid",
+      starts_at: paidIso,
+      ends_at: null,
+      is_all_day: false,
+      visibility: "internal",
+    })
+  } else {
+    await supabase.from("project_events").delete().eq("id", paidEventId)
+  }
+
+  if (rows.length > 0) {
+    const { error } = await supabase.from("project_events").upsert(rows, { onConflict: "id" })
+    if (error) throw error
+  }
+}
+
+export async function syncPaymentCalendarEvents(paymentId: string): Promise<void> {
+  const payment = await getAdminPaymentById(paymentId)
+  if (!payment) return
+  await syncPaymentCalendarEventsForRecord(payment)
+}
+
+export async function deletePaymentCalendarEvents(paymentId: string): Promise<void> {
+  const supabase = createServerSupabaseClient()
+  const dueEventId = derivePaymentEventId(paymentId, "due")
+  const paidEventId = derivePaymentEventId(paymentId, "paid")
+  await supabase.from("project_events").delete().in("id", [dueEventId, paidEventId])
+}
+

@@ -45,7 +45,6 @@ import type {
 } from "@app/types/admin"
 import {
   archiveAdminProject,
-  createAdminClient,
   createAdminProject,
   deleteAdminProject,
   duplicateAdminProject,
@@ -112,6 +111,7 @@ interface ProjectFormValues {
   estimatedDelivery: string
   locationCity: string
   locationNotes: string
+  locationMapUrl: string
   clientId: string
   createNewClient: boolean
   newClientFullName: string
@@ -142,6 +142,7 @@ function emptyForm(): ProjectFormValues {
     estimatedDelivery: "",
     locationCity: "",
     locationNotes: "",
+    locationMapUrl: "",
     clientId: "",
     createNewClient: false,
     newClientFullName: "",
@@ -170,6 +171,7 @@ function getInitialFormFromDetail(detail: AdminProjectDetails): ProjectFormValue
     estimatedDelivery: detail.project.estimatedDelivery ?? "",
     locationCity: detail.project.locationCity ?? "",
     locationNotes: detail.project.locationNotes ?? "",
+    locationMapUrl: detail.project.locationMapUrl ?? "",
     clientId: detail.project.clientId ?? "",
     createNewClient: false,
     newClientFullName: "",
@@ -374,7 +376,6 @@ export function AdminProjectsPage() {
       toast.error("No se pudo eliminar el proyecto")
     }
   }
-
   const handleFormSubmit = async (values: ProjectFormValues) => {
     if (values.createNewClient) {
       if (!values.newClientFullName.trim() || !values.newClientEmail.trim()) {
@@ -389,26 +390,6 @@ export function AdminProjectsPage() {
     setFormLoading(true)
 
     try {
-      let clientId = values.clientId ?? ""
-
-      if (values.createNewClient) {
-        const client = await createAdminClient({
-          fullName: values.newClientFullName,
-          email: values.newClientEmail,
-        })
-        setClients((prev) => [
-          ...prev,
-          {
-            id: client.id,
-            fullName: client.full_name,
-            email: client.email,
-            createdAt: new Date().toISOString(),
-            projects: [],
-          },
-        ])
-        clientId = client.id
-      }
-
       const sanitizedAssignments = Object.entries(values.teamAssignments ?? {}).reduce<Record<string, string>>((acc, [role, memberId]) => {
         const trimmed = (memberId ?? "").trim()
         if (trimmed.length > 0) {
@@ -417,6 +398,7 @@ export function AdminProjectsPage() {
         return acc
       }, {})
 
+      const isCreatingClient = values.createNewClient
       const payload = {
         name: values.name,
         slug: values.slug || undefined,
@@ -426,7 +408,11 @@ export function AdminProjectsPage() {
         estimatedDelivery: values.estimatedDelivery || null,
         locationCity: values.locationCity || null,
         locationNotes: values.locationNotes || null,
-        clientId: clientId || undefined,
+        locationMapUrl: values.locationMapUrl || undefined,
+        clientId: !isCreatingClient ? values.clientId || undefined : undefined,
+        createNewClient: isCreatingClient || undefined,
+        newClientFullName: isCreatingClient ? values.newClientFullName.trim() : undefined,
+        newClientEmail: isCreatingClient ? values.newClientEmail.trim().toLowerCase() : undefined,
         teamAssignments: Object.keys(sanitizedAssignments).length > 0 ? sanitizedAssignments : undefined,
         managerId: sanitizedAssignments.director ?? undefined,
       }
@@ -878,6 +864,18 @@ function ProjectFormSheet({ open, onOpenChange, mode, values, setValues, loading
                 <Label className="text-sm text-[#2F4F4F]">Ubicación</Label>
                 <Input value={values.locationCity} onChange={handleChange("locationCity")} className="border-[#E8E6E0]" placeholder="Ciudad" />
                 <Textarea value={values.locationNotes} onChange={handleChange("locationNotes")} className="border-[#E8E6E0]" placeholder="Notas de ubicación" />
+                <div className="space-y-1">
+                  <Label className="text-xs text-[#4B5563]">Coordenadas para el mapa (latitud, longitud)</Label>
+                  <Input
+                    value={values.locationMapUrl}
+                    onChange={handleChange("locationMapUrl")}
+                    className="border-[#E8E6E0] font-mono text-xs"
+                    placeholder="Ejemplo: 41.3902, 2.1540"
+                  />
+                  <p className="text-[11px] text-[#6B7280]">
+                    En Google Maps haz clic derecho en el punto → <span className="font-semibold">“¿Qué hay aquí?”</span> y copia las coordenadas.
+                  </p>
+                </div>
               </div>
               <div className="space-y-3">
                 <Label className="text-sm font-semibold text-[#2F4F4F]">Asignar equipo</Label>

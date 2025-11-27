@@ -1,11 +1,16 @@
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { useSearchParams } from "react-router-dom"
 
 import { AdminProjectPicker } from "@/components/calendar/admin-project-picker"
-import { ProjectCalendar } from "@/components/calendar/project-calendar"
+import { AdminTaskCalendar } from "@/components/calendar/admin-task-calendar"
 import { Card } from "@/components/ui/card"
 import type { ProjectEvent } from "@app/types/events"
-import { listGlobalEvents, listProjectCalendarSummaries, listProjectEvents } from "@app/lib/api/events"
+import {
+  listGlobalEvents,
+  listMyPersonalEvents,
+  listProjectCalendarSummaries,
+  listProjectEvents,
+} from "@app/lib/api/events"
 import { differenceInCalendarDays, format, parseISO } from "date-fns"
 import { es } from "date-fns/locale"
 
@@ -13,6 +18,7 @@ export function AdminCalendarPage() {
   const [searchParams] = useSearchParams()
   const [projects, setProjects] = useState<Awaited<ReturnType<typeof listProjectCalendarSummaries>>>([])
   const [events, setEvents] = useState<ProjectEvent[]>([])
+  const [mode, setMode] = useState<"projects" | "personal">("projects")
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [activeProjectName, setActiveProjectName] = useState<string | undefined>(undefined)
@@ -34,6 +40,36 @@ export function AdminCalendarPage() {
   useEffect(() => {
     setLoading(true)
     setError(null)
+
+    if (mode === "personal") {
+      listMyPersonalEvents()
+        .then((personalEvents) => {
+          setEvents(
+            personalEvents.map((event) => ({
+              id: event.id,
+              projectId: "personal",
+              title: event.title,
+              description: event.description,
+              eventType: event.eventType,
+              startsAt: event.startsAt,
+              endsAt: event.endsAt,
+              isAllDay: event.isAllDay,
+              visibility: "internal",
+              createdBy: null,
+              createdAt: event.createdAt,
+              updatedAt: event.updatedAt,
+            })),
+          )
+          setActiveProjectName("Mis tareas")
+          setActiveProjectId(undefined)
+        })
+        .catch((err) => {
+          console.error(err)
+          setError("No pudimos cargar tus tareas personales.")
+        })
+        .finally(() => setLoading(false))
+      return
+    }
 
     if (!activeSlug) {
       listGlobalEvents()
@@ -61,7 +97,52 @@ export function AdminCalendarPage() {
         setError("No pudimos cargar el calendario del proyecto seleccionado.")
       })
       .finally(() => setLoading(false))
-  }, [activeSlug])
+  }, [activeSlug, mode])
+
+  const handleEventsChanged = useCallback(() => {
+    // Recarga silenciosa para que el usuario no pierda el scroll ni vea parpadeos
+    ;(async () => {
+      try {
+        if (mode === "personal") {
+          const personalEvents = await listMyPersonalEvents()
+          setEvents(
+            personalEvents.map((event) => ({
+              id: event.id,
+              projectId: "personal",
+              title: event.title,
+              description: event.description,
+              eventType: event.eventType,
+              startsAt: event.startsAt,
+              endsAt: event.endsAt,
+              isAllDay: event.isAllDay,
+              visibility: "internal",
+              createdBy: null,
+              createdAt: event.createdAt,
+              updatedAt: event.updatedAt,
+            })),
+          )
+          setActiveProjectName("Mis tareas")
+          setActiveProjectId(undefined)
+          return
+        }
+
+        if (!activeSlug) {
+          const globalEvents = await listGlobalEvents()
+          setEvents(globalEvents)
+          setActiveProjectName(undefined)
+          setActiveProjectId(undefined)
+          return
+        }
+
+        const result = await listProjectEvents(activeSlug)
+        setEvents(result.events)
+        setActiveProjectName(result.project?.name)
+        setActiveProjectId(result.project?.id)
+      } catch (err) {
+        console.error("Error refrescando calendario tras guardar:", err)
+      }
+    })()
+  }, [activeSlug, mode])
 
   const title = activeSlug ? activeProjectName ?? "Calendario de proyecto" : "Calendario global Terrazea"
   const subtitle = activeSlug
@@ -92,27 +173,6 @@ export function AdminCalendarPage() {
 
   const projectSummary = activeSlug ? projects.find((project) => project.slug === activeSlug) : null
 
-  const headerContent = upcomingEvents.length > 0 ? (
-    <div className="rounded-[1.25rem] border border-[#E8E6E0] bg-[#FDFCF9] p-4 text-sm text-[#4B5563] shadow-sm">
-      <p className="text-xs uppercase tracking-[0.3em] text-[#C6B89E]">Próximos hitos</p>
-      <ul className="mt-3 space-y-2 text-xs">
-        {upcomingEvents.slice(0, 3).map(({ event, start }) => (
-          <li key={event.id} className="flex items-center justify-between gap-3">
-            <span className="font-medium text-[#2F4F4F]">{event.title}</span>
-            <span className="text-[#6B7280]">
-              {format(start, "d MMM · HH:mm", { locale: es })}
-              {event.project ? ` · ${event.project.name}` : ""}
-            </span>
-          </li>
-        ))}
-      </ul>
-    </div>
-  ) : (
-    <div className="rounded-[1.25rem] border border-dashed border-[#E8E6E0] bg-[#F8F7F4] p-4 text-sm text-[#6B7280]">
-      Añade visitas, hitos o entregas para construir tu cronograma.
-    </div>
-  )
-
   if (loading) {
     return (
       <div className="rounded-[1.5rem] border border-[#E8E6E0] bg-white/80 p-10 text-center shadow-apple-xl">
@@ -136,35 +196,58 @@ export function AdminCalendarPage() {
         <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
           <div className="space-y-4">
             <div className="space-y-2">
-              <p className="text-xs uppercase tracking-[0.3em] text-[#C6B89E]">Planificación Terrazea</p>
-              <h1 className="font-heading text-3xl text-[#2F4F4F] lg:text-4xl">{title}</h1>
+              <p className="text-xs uppercase tracking-[0.3em] text-[#C6B89E]">Planning</p>
+              <h1 className="font-heading text-3xl text-[#2F4F4F] lg:text-4xl">Task calendar</h1>
               <p className="max-w-2xl text-sm text-[#6B7280]">{subtitle}</p>
             </div>
-            <div className="grid gap-3 sm:grid-cols-3">
-              <div className="rounded-[1.25rem] border border-[#E8E6E0] bg-[#F8F7F4] p-4 text-sm text-[#4B5563]">
-                <p className="text-xs uppercase tracking-[0.3em] text-[#C6B89E]">Eventos planificados</p>
-                <p className="mt-2 text-2xl font-semibold text-[#2F4F4F]">{events.length}</p>
-                <p className="mt-1 text-xs text-[#6B7280]">
-                  Incluye históricos y próximos hitos
-                  {projectSummary?.clientName ? ` para ${projectSummary.clientName}` : "."}
-                </p>
-              </div>
-              <div className="rounded-[1.25rem] border border-[#E8E6E0] bg-[#F8F7F4] p-4 text-sm text-[#4B5563]">
-                <p className="text-xs uppercase tracking-[0.3em] text-[#C6B89E]">Próximos 7 días</p>
-                <p className="mt-2 text-2xl font-semibold text-[#2F4F4F]">{upcomingInSevenDays.length}</p>
-                <p className="mt-1 text-xs text-[#6B7280]">Eventos programados dentro de la próxima semana.</p>
-              </div>
-              <div className="rounded-[1.25rem] border border-[#E8E6E0] bg-[#F8F7F4] p-4 text-sm text-[#4B5563]">
-                <p className="text-xs uppercase tracking-[0.3em] text-[#C6B89E]">Próximo hito</p>
-                <p className="mt-2 line-clamp-1 text-sm font-medium text-[#2F4F4F]">
-                  {nextEvent ? nextEvent.title : "Sin eventos próximos"}
-                </p>
-                <p className="mt-1 text-xs text-[#6B7280]">{nextEventLabel}</p>
+            <div className="mt-2 flex max-w-md flex-col gap-3 sm:flex-row sm:items-center">
+              <div className="relative flex-1">
+                <input
+                  type="search"
+                  placeholder="Buscar tareas, visitas o hitos..."
+                  className="w-full rounded-full border border-[#E8E6E0] bg-[#F8F7F4] px-4 py-2.5 text-sm text-[#2F4F4F] placeholder:text-[#9CA3AF] focus:border-[#0D9488] focus:outline-none focus:ring-2 focus:ring-[#AAF2E3]"
+                />
               </div>
             </div>
           </div>
           <div className="flex w-full max-w-sm flex-col gap-3">
-            <AdminProjectPicker projects={projects} activeSlug={activeSlug} allowGlobalOption />
+            <div className="rounded-[1.25rem] border border-[#E8E6E0] bg-[#F8F7F4] px-4 py-3">
+              <p className="text-[10px] uppercase tracking-[0.3em] text-[#C6B89E]">Vista</p>
+              <p className="mt-1 text-xs text-[#4B5563]">
+                {mode === "personal"
+                  ? "Mostrando tus tareas personales"
+                  : activeSlug
+                    ? "Mostrando calendario del proyecto seleccionado"
+                    : "Mostrando calendario global Terrazea"}
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className={`flex-1 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                  mode === "projects"
+                    ? "border-[#0D9488] bg-white text-[#0D9488]"
+                    : "border-[#E8E6E0] bg-white/60 text-[#374151] hover:border-[#0D9488]/60"
+                }`}
+                onClick={() => setMode("projects")}
+              >
+                Proyectos
+              </button>
+              <button
+                type="button"
+                className={`flex-1 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                  mode === "personal"
+                    ? "border-[#0D9488] bg-white text-[#0D9488]"
+                    : "border-[#E8E6E0] bg-white/60 text-[#374151] hover:border-[#0D9488]/60"
+                }`}
+                onClick={() => setMode("personal")}
+              >
+                Mis tareas
+              </button>
+            </div>
+            {mode === "projects" ? (
+              <AdminProjectPicker projects={projects} activeSlug={activeSlug} allowGlobalOption />
+            ) : null}
             {projectSummary ? (
               <div className="rounded-[1.25rem] border border-[#E8E6E0] bg-[#F8F7F4] px-4 py-3 text-xs text-[#4B5563]">
                 <p className="text-[10px] uppercase tracking-[0.3em] text-[#C6B89E]">Cliente</p>
@@ -177,18 +260,15 @@ export function AdminCalendarPage() {
         </div>
       </Card>
 
-      <ProjectCalendar
+      <AdminTaskCalendar
         events={events}
-        projectName={activeSlug ? activeProjectName : undefined}
-        showVisibility
+        projectName={mode === "personal" ? "Mis tareas" : activeSlug ? activeProjectName : undefined}
         projectId={activeProjectId}
-        projectSlug={activeSlug ?? undefined}
         showAdminControls={Boolean(activeProjectId)}
-        getEventSecondaryLine={(event) =>
-          event.project ? <span className="font-medium text-[#2F4F4F]">{event.project.name}</span> : ""
-        }
-        getUpcomingSecondaryLine={(event) => (event.project ? event.project.name : "")}
-        headerContent={headerContent}
+        mode={mode}
+        projects={projects}
+        isGlobal={mode === "projects" && !activeSlug}
+        onEventsChanged={handleEventsChanged}
       />
     </div>
   )

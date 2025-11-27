@@ -500,7 +500,7 @@ export function ProjectCalendar({
         <div className="mt-4 space-y-3">
           {showAdminControls && projectId && (
             <div className="flex justify-end">
-              <EventFormModal projectId={projectId} />
+              <EventFormModal projectId={projectId} defaultDate={selectedDate ?? undefined} />
             </div>
           )}
           {selectedEvents.length === 0 ? (

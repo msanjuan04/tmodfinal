@@ -49,3 +49,44 @@ export async function updateProjectEvent(eventId: string, input: ProjectEventWri
 export async function deleteProjectEvent(eventId: string) {
   await api.delete(`/admin/events/${eventId}`)
 }
+
+export interface PersonalEvent {
+  id: string
+  userId: string
+  title: string
+  description: string | null
+  eventType: string
+  startsAt: string
+  endsAt: string | null
+  isAllDay: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface PersonalEventWriteInput {
+  title: string
+  description?: string | null
+  eventType: string
+  startsAt: string
+  endsAt?: string | null
+  isAllDay?: boolean
+}
+
+export async function listMyPersonalEvents() {
+  const response = await api.get<{ events: PersonalEvent[] }>("/admin/personal-events")
+  return response.data.events
+}
+
+export async function createPersonalEvent(input: PersonalEventWriteInput) {
+  const response = await api.post<PersonalEvent>("/admin/personal-events", input)
+  return response.data
+}
+
+export async function updatePersonalEvent(eventId: string, input: PersonalEventWriteInput) {
+  const response = await api.put<PersonalEvent>(`/admin/personal-events/${eventId}`, input)
+  return response.data
+}
+
+export async function deletePersonalEvent(eventId: string) {
+  await api.delete(`/admin/personal-events/${eventId}`)
+}

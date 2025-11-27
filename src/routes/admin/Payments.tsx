@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { Link } from "react-router-dom"
+import { Link, useSearchParams } from "react-router-dom"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import { toast } from "sonner"
-import { AlertCircle, CreditCard, Loader2, Paperclip, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react"
+import { AlertCircle, CreditCard, FileSpreadsheet, Loader2, Paperclip, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -47,6 +47,7 @@ const INITIAL_FORM = {
   description: "",
   amount: "",
   dueDate: "",
+  budgetId: "" as string | undefined | "",
 }
 
 function formatCurrency(amountCents: number | undefined, currency = "EUR") {
@@ -91,6 +92,7 @@ export function AdminPaymentsPage() {
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null)
   const [attachmentError, setAttachmentError] = useState<string | null>(null)
   const [actionPaymentId, setActionPaymentId] = useState<string | null>(null)
+  const [searchParams, setSearchParams] = useSearchParams()
 
   const loadPayments = useCallback(async () => {
     try {
@@ -110,6 +112,39 @@ export function AdminPaymentsPage() {
   useEffect(() => {
     void loadPayments()
   }, [loadPayments])
+
+  useEffect(() => {
+    const fromBudgetId = searchParams.get("fromBudgetId")
+    if (!fromBudgetId) return
+
+    const budgetTitle = searchParams.get("budgetTitle") ?? ""
+    const budgetTotalRaw = searchParams.get("budgetTotal")
+    const budgetClient = searchParams.get("budgetClient") ?? ""
+
+    const amountValue = budgetTotalRaw ? Number(budgetTotalRaw) : 0
+
+    setFormMode("create")
+    setEditingPayment(null)
+    setForm({
+      projectId: "",
+      concept: budgetTitle || "Pago desde presupuesto",
+      description: budgetClient ? `Pago generado desde presupuesto para ${budgetClient}.` : "",
+      amount: amountValue > 0 ? amountValue.toString() : "",
+      dueDate: "",
+      budgetId: fromBudgetId,
+    })
+    setSheetOpen(true)
+
+    // Limpiamos el parámetro para que no rehidrate al volver
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current)
+      next.delete("fromBudgetId")
+      next.delete("budgetTitle")
+      next.delete("budgetTotal")
+      next.delete("budgetClient")
+      return next
+    })
+  }, [searchParams, setSearchParams])
 
   useEffect(() => {
     void (async () => {
@@ -176,6 +211,7 @@ export function AdminPaymentsPage() {
       description: payment.description ?? "",
       amount: (payment.amountCents / 100).toString(),
       dueDate: payment.dueDate ?? "",
+      budgetId: payment.budgetId ?? undefined,
     })
     setFormError(null)
     setAttachmentFile(null)
@@ -247,6 +283,7 @@ export function AdminPaymentsPage() {
           currency: "EUR",
           dueDate: form.dueDate || null,
           attachment: attachmentPayload,
+          budgetId: form.budgetId || undefined,
         })
         toast.success(
           payment.status === "pending" ? "Pago enviado al cliente" : "Pago creado, pendiente de envío",
@@ -337,6 +374,17 @@ export function AdminPaymentsPage() {
           {loading ? "Actualizando" : "Actualizar"}
         </Button>
 
+        <Button
+          asChild
+          variant="outline"
+          className="inline-flex items-center gap-2 rounded-full border-[#E8E6E0] px-4 py-2 text-sm text-[#2F4F4F] hover:bg-[#F4F1EA]"
+        >
+          <Link to="/dashboard/budgets">
+            <FileSpreadsheet className="mr-2 h-4 w-4" />
+            Ir a presupuestos
+          </Link>
+        </Button>
+
         <Sheet
           open={sheetOpen}
           onOpenChange={(nextOpen) => {
@@ -389,6 +437,16 @@ export function AdminPaymentsPage() {
                   <p className="text-xs text-[#6B7280]">Este pago pertenece a {editingPayment.projectName}.</p>
                 ) : null}
               </div>
+
+              {formMode === "edit" && editingPayment?.budgetId ? (
+                <div className="space-y-1">
+                  <span className="text-xs font-medium text-[#6B7280]">Presupuesto vinculado</span>
+                  <div className="inline-flex items-center gap-1 rounded-full bg-[#F8F7F4] px-3 py-1 text-xs text-[#374151]">
+                    <FileSpreadsheet className="h-3 w-3 text-[#2F4F4F]" />
+                    <span>ID: {editingPayment.budgetId}</span>
+                  </div>
+                </div>
+              ) : null}
 
               <div className="space-y-2">
                 <Label htmlFor="payment-concept">Concepto</Label>
@@ -514,6 +572,12 @@ export function AdminPaymentsPage() {
                     )}
                     {payment.clientName ? <> · {payment.clientName}</> : null}
                   </div>
+                  {payment.budgetId ? (
+                    <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-[#F8F7F4] px-3 py-1 text-xs text-[#374151]">
+                      <FileSpreadsheet className="h-3 w-3 text-[#2F4F4F]" />
+                      <span>Vinculado a presupuesto</span>
+                    </div>
+                  ) : null}
                   {payment.description ? <p className="mt-2 text-sm text-[#4B5563]">{payment.description}</p> : null}
                   {payment.proposalDocumentUrl ? (
                     <a

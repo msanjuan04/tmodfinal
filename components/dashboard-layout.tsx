@@ -24,6 +24,7 @@ import {
   ChevronRight,
   CreditCard,
   FileText,
+  FileSpreadsheet,
   FolderKanban,
   LayoutDashboard,
   LogOut,
@@ -41,6 +42,7 @@ const navigation = [
   { name: "Calendario", href: "/dashboard/calendar", icon: CalendarDays },
   { name: "Proyectos", href: "/dashboard/projects", icon: FolderKanban },
   { name: "Clientes", href: "/dashboard/clients", icon: Users },
+  { name: "Presupuestos", href: "/dashboard/budgets", icon: FileSpreadsheet },
   { name: "Pagos", href: "/dashboard/payments", icon: CreditCard },
   { name: "Equipo", href: "/dashboard/team", icon: UserCog },
   { name: "Documentos", href: "/dashboard/documents", icon: FileText },
@@ -57,12 +59,12 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const portalSubtitle = isAdmin ? "Portal Admin" : "Portal Cliente"
 
   return (
-    <div className="min-h-screen bg-[#f4f1ea]">
+    <div className="min-h-screen bg-background text-foreground">
       {/* Desktop Sidebar */}
-      <aside className="fixed inset-y-0 left-0 z-50 hidden w-64 border-r border-[#e8e6e0] bg-white lg:block">
+      <aside className="fixed inset-y-0 left-0 z-50 hidden w-64 border-r border-border bg-card lg:block">
         <div className="flex h-full flex-col">
           {/* Logo */}
-          <div className="flex h-16 items-center border-b border-[#e8e6e0] px-6">
+          <div className="flex h-16 items-center border-b border-border px-6">
             <TerrazeaBrand subtitle={portalSubtitle} />
           </div>
 
@@ -76,7 +78,9 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                   to={item.href}
                   className={cn(
                     "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
-                    isActive ? "bg-[#2f4f4f] text-white" : "text-[#6b7280] hover:bg-[#f4f1ea] hover:text-[#2f4f4f]",
+                    isActive
+                      ? "bg-[#2f4f4f] text-white"
+                      : "text-muted-foreground hover:bg-muted/60 hover:text-[#2f4f4f]",
                   )}
                 >
                   <item.icon className="h-5 w-5" />
@@ -87,19 +91,19 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
           </nav>
 
           {/* User Profile */}
-          <div className="border-t border-[#e8e6e0] p-4">
+          <div className="border-t border-border p-4">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors hover:bg-[#f4f1ea]">
+                <button className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors hover:bg-muted">
                   <Avatar className="h-10 w-10">
                     <AvatarImage src="/placeholder.svg?height=40&width=40" />
                     <AvatarFallback className="bg-[#c6b89e] text-[#2f4f4f]">JP</AvatarFallback>
                   </Avatar>
                   <div className="flex-1 overflow-hidden">
-                    <p className="truncate text-sm font-medium text-[#2f4f4f]">{session?.name ?? "Equipo Terrazea"}</p>
-                    <p className="truncate text-xs text-[#6b7280]">{safeEmail}</p>
+                    <p className="truncate text-sm font-medium text-foreground">{session?.name ?? "Equipo Terrazea"}</p>
+                    <p className="truncate text-xs text-muted-foreground">{safeEmail}</p>
                   </div>
-                  <ChevronRight className="h-4 w-4 text-[#6b7280]" />
+                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
@@ -131,7 +135,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* Mobile Header */}
-      <header className="sticky top-0 z-40 flex h-16 items-center gap-4 border-b border-[#e8e6e0] bg-white px-4 lg:hidden">
+      <header className="sticky top-0 z-40 flex h-16 items-center gap-4 border-b border-border bg-card px-4 lg:hidden">
         <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
           <SheetTrigger asChild>
             <Button variant="ghost" size="icon" className="lg:hidden">
@@ -210,7 +214,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
-      <div className="hidden border-b border-[#e8e6e0] bg-white/80 lg:block lg:pl-64">
+      <div className="hidden border-b border-border bg-card/80 lg:block lg:pl-64">
         <div className="flex items-center justify-end px-8 py-4">
           <NotificationsMenu audience="admin" buttonVariant="outline" />
         </div>
@@ -218,7 +222,11 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
 
       {/* Main Content */}
       <main className="lg:pl-64">
-        <div className="px-4 py-8 sm:px-6 lg:px-8">{children}</div>
+        <div className="px-4 py-8 sm:px-6 lg:px-8">
+          <div className="rounded-[2rem] bg-[#F8F7F4] px-4 py-6 shadow-apple-xl sm:px-6 lg:px-8">
+            {children}
+          </div>
+        </div>
       </main>
     </div>
   )

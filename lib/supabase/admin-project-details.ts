@@ -12,6 +12,7 @@ interface ProjectRow {
   estimated_delivery: string | null
   location_city: string | null
   location_notes: string | null
+  map_url: string | null
   clients?:
     | {
         full_name: string | null
@@ -56,6 +57,7 @@ export interface AdminProjectDetailsResult {
     estimatedDelivery: string | null
     locationCity: string | null
     locationNotes: string | null
+    locationMapUrl: string | null
     clientName: string | null
   }
   stats: {
@@ -103,6 +105,7 @@ export async function getAdminProjectDetails(projectId: string): Promise<AdminPr
         estimated_delivery,
         location_city,
         location_notes,
+        map_url,
         clients ( full_name )
       `,
     )
@@ -220,6 +223,7 @@ export async function getAdminProjectDetails(projectId: string): Promise<AdminPr
       estimatedDelivery: project.estimated_delivery,
       locationCity: project.location_city,
       locationNotes: project.location_notes,
+      locationMapUrl: project.map_url,
       clientName: Array.isArray(project.clients)
         ? project.clients[0]?.full_name ?? null
         : project.clients?.full_name ?? null,

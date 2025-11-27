@@ -3,7 +3,7 @@ import Stripe from "stripe"
 import { createServerSupabaseClient } from "../../lib/supabase/server"
 import { env } from "../config/env"
 import { sendPaymentReceiptEmail } from "../services/email"
-import { getAdminPaymentById } from "../../lib/supabase/admin-payments"
+import { getAdminPaymentById, syncPaymentCalendarEvents } from "../../lib/supabase/admin-payments"
 import { asyncHandler } from "../utils/async-handler"
 
 const router = Router()
@@ -85,6 +85,7 @@ router.post(
         } else {
           console.log(`Payment ${payment.id} marked as paid via webhook`)
           await notifyPaymentReceipt(payment.id)
+          await syncPaymentCalendarEvents(payment.id)
         }
         break
       }
@@ -130,6 +131,7 @@ router.post(
         } else {
           console.log(`Payment ${payment.id} marked as paid via payment_intent webhook`)
           await notifyPaymentReceipt(payment.id)
+          await syncPaymentCalendarEvents(payment.id)
         }
         break
       }
@@ -171,6 +173,7 @@ router.post(
         } else {
           console.log(`Payment ${payment.id} marked as paid via async webhook`)
           await notifyPaymentReceipt(payment.id)
+          await syncPaymentCalendarEvents(payment.id)
         }
         break
       }
