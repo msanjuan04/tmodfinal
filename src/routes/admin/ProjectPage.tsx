@@ -435,14 +435,14 @@ export function AdminProjectPage() {
               <CardTitle className="text-[#2F4F4F]">Actividades recientes</CardTitle>
             </CardHeader>
             <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              {detail.timeline.slice(0, 4).map((event) => (
+              {(detail.timeline ?? []).slice(0, 4).map((event) => (
                 <div key={event.id} className="rounded-[1.25rem] border border-[#E8E6E0] bg-[#F8F7F4] p-4 text-sm text-[#4B5563]">
                   <p className="text-xs uppercase tracking-[0.3em] text-[#C6B89E]">{formatDateTime(event.occurredAt)}</p>
                   <p className="mt-2 font-medium text-[#2F4F4F]">{event.title}</p>
                   {event.description ? <p className="mt-1 text-xs text-[#6B7280]">{event.description}</p> : null}
                 </div>
               ))}
-              {detail.timeline.length === 0 ? <p className="text-sm text-[#6B7280]">No hay actividad registrada recientemente.</p> : null}
+              {(detail.timeline ?? []).length === 0 ? <p className="text-sm text-[#6B7280]">No hay actividad registrada recientemente.</p> : null}
             </CardContent>
           </Card>
 
@@ -970,8 +970,8 @@ function TimelineSection({ projectId, timeline, onUpdated }: TimelineSectionProp
           <div className="relative">
             <div className="absolute left-4 top-3 bottom-3 w-px bg-[#E8E6E0]" aria-hidden />
             <div className="space-y-6">
-              {timeline.map((event) => {
-                const styles = resolveTimelineStyles(event.status)
+              {(timeline ?? []).map((event) => {
+                const styles = resolveTimelineStyles(event.status ?? "")
                 return (
                   <div key={event.id} className="relative pl-14">
                     <div

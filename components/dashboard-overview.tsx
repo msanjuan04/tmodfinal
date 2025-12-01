@@ -52,24 +52,27 @@ const UPDATE_ICON_MAP: Record<
 }
 
 export function DashboardOverview({ data }: { data: DashboardData }) {
-  const startDateLabel = formatDate(data.project.startDate)
-  const estimatedDeliveryLabel = formatDate(data.project.estimatedDelivery)
-  const remainingDaysLabel = formatDays(data.project.remainingDays)
+  // Asegúrate de proteger los accesos a datos para evitar crash en producción si alguna propiedad es undefined:
+  const safeMetrics = Array.isArray(data?.metrics) ? data.metrics : [];
+  const safeProject = data?.project ?? {};
+  const startDateLabel = formatDate(safeProject.startDate); // Ya usaba safe
+  const estimatedDeliveryLabel = formatDate(safeProject.estimatedDelivery);
+  const remainingDaysLabel = formatDays(safeProject.remainingDays);
   const [activeFilter, setActiveFilter] = useState<DashboardFilter>("all")
 
   const filteredMetrics = useMemo(() => {
-    if (activeFilter === "all") return data.metrics
+    if (activeFilter === "all") return safeMetrics;
     if (activeFilter === "project") {
-      return data.metrics.filter((m) => m.code.includes("milestones") || m.code.includes("projects"))
+      return safeMetrics.filter((m) => m.code?.includes("milestones") || m.code?.includes("projects"));
     }
     if (activeFilter === "communication") {
-      return data.metrics.filter((m) => m.code.includes("messages") || m.code.includes("documents"))
+      return safeMetrics.filter((m) => m.code?.includes("messages") || m.code?.includes("documents"));
     }
     if (activeFilter === "media") {
-      return data.metrics.filter((m) => m.code.includes("photos"))
+      return safeMetrics.filter((m) => m.code?.includes("photos"));
     }
-    return data.metrics
-  }, [activeFilter, data.metrics])
+    return safeMetrics;
+  }, [activeFilter, safeMetrics])
 
   return (
     <div className="space-y-8">

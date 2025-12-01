@@ -43,7 +43,7 @@ export function AdminClientsPage() {
     void refreshClients()
   }, [])
 
-  const totalProjects = useMemo(() => clients.reduce((acc, client) => acc + client.projects.length, 0), [clients])
+  const totalProjects = useMemo(() => clients.reduce((acc, client) => acc + (client.projects ?? []).length, 0), [clients])
 
   const filteredAndSortedClients = useMemo(() => {
     let filtered = [...clients]
@@ -59,9 +59,9 @@ export function AdminClientsPage() {
 
     // Filtro por proyectos
     if (filterBy === "with-projects") {
-      filtered = filtered.filter((client) => client.projects.length > 0)
+      filtered = filtered.filter((client) => (client.projects ?? []).length > 0)
     } else if (filterBy === "no-projects") {
-      filtered = filtered.filter((client) => client.projects.length === 0)
+      filtered = filtered.filter((client) => (client.projects ?? []).length === 0)
     }
 
     // Ordenamiento
@@ -70,7 +70,7 @@ export function AdminClientsPage() {
         case "name":
           return a.fullName.localeCompare(b.fullName)
         case "projects":
-          return b.projects.length - a.projects.length
+          return (b.projects ?? []).length - (a.projects ?? []).length
         case "recent":
           return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
         default:
@@ -386,13 +386,13 @@ function getAvatarColor(name: string): string {
 
 // Componente de card de cliente mejorado
 function ClientCard({ client }: { client: AdminClientOverview }) {
-  const activeProjects = client.projects.filter(
+  const activeProjects = (client.projects ?? []).filter(
     (p) => p.status === "activo" || p.status === "en_progreso" || p.status === "planificacion",
   )
-  const completedProjects = client.projects.filter((p) => p.status === "completado" || p.status === "finalizado")
+  const completedProjects = (client.projects ?? []).filter((p) => p.status === "completado" || p.status === "finalizado")
   const averageProgress =
-    client.projects.length > 0
-      ? Math.round(client.projects.reduce((acc, p) => acc + p.progressPercent, 0) / client.projects.length)
+    (client.projects ?? []).length > 0
+      ? Math.round((client.projects ?? []).reduce((acc, p) => acc + (p.progressPercent ?? 0), 0) / (client.projects ?? []).length)
       : 0
 
   return (
@@ -418,7 +418,7 @@ function ClientCard({ client }: { client: AdminClientOverview }) {
         <div className="mb-6 grid grid-cols-3 gap-3">
           <MetricBadge
             icon={FolderKanban}
-            value={client.projects.length}
+            value={(client.projects ?? []).length}
             label="Total"
             color="bg-[#2F4F4F]"
           />
@@ -437,7 +437,7 @@ function ClientCard({ client }: { client: AdminClientOverview }) {
         </div>
 
         {/* Progreso promedio */}
-        {client.projects.length > 0 && (
+        {(client.projects ?? []).length > 0 && (
           <div className="mb-6 space-y-2">
             <div className="flex items-center justify-between text-xs">
               <span className="font-medium text-[#6B7280]">Progreso promedio</span>
@@ -453,13 +453,13 @@ function ClientCard({ client }: { client: AdminClientOverview }) {
         )}
 
         {/* Lista de proyectos (máximo 3) */}
-        {client.projects.length > 0 ? (
+        {(client.projects ?? []).length > 0 ? (
           <div className="space-y-3">
             <p className="text-xs font-semibold uppercase tracking-[0.25em] text-[#C6B89E]">
-              Proyectos ({client.projects.length})
+              Proyectos ({(client.projects ?? []).length})
             </p>
             <div className="space-y-2">
-              {client.projects.slice(0, 3).map((project) => (
+              {(client.projects ?? []).slice(0, 3).map((project) => (
                 <div
                   key={project.id}
                   className="rounded-[1rem] border border-[#E8E6E0] bg-[#F8F7F4] p-3 transition hover:border-[#2F4F4F]/30"
@@ -468,34 +468,34 @@ function ClientCard({ client }: { client: AdminClientOverview }) {
                     <div className="flex-1 min-w-0">
                       <p className="truncate text-sm font-medium text-[#2F4F4F]">{project.name}</p>
                       <p className="mt-1 text-xs text-[#6B7280]">
-                        {Math.round(project.progressPercent)}% completado
+                        {Math.round(project.progressPercent ?? 0)}% completado
                       </p>
                     </div>
                     <Badge
                       variant="outline"
                       className="shrink-0 border-[#E8E6E0] bg-white text-[#2F4F4F] text-[10px]"
                     >
-                      {project.status.replace(/_/g, " ")}
+                      {(project.status ?? "").replace(/_/g, " ")}
                     </Badge>
                   </div>
                   <div className="relative mt-2 h-1.5 w-full overflow-hidden rounded-full bg-[#E8E6E0]">
                     <div
                       className="h-full rounded-full bg-[#2F4F4F] transition-all duration-300"
-                      style={{ width: `${project.progressPercent}%` }}
+                      style={{ width: `${project.progressPercent ?? 0}%` }}
                     />
                   </div>
                 </div>
               ))}
-              {client.projects.length > 3 && (
+              {(client.projects ?? []).length > 3 && (
                 <p className="text-center text-xs text-[#6B7280]">
-                  +{client.projects.length - 3} proyecto{client.projects.length - 3 === 1 ? "" : "s"} más
+                  +{(client.projects ?? []).length - 3} proyecto{(client.projects ?? []).length - 3 === 1 ? "" : "s"} más
                 </p>
               )}
             </div>
           </div>
         ) : (
           <div className="rounded-[1.1rem] border border-dashed border-[#E8E6E0] bg-[#F8F7F4] p-4 text-center">
-            <p className="text-xs text-[#6B7280]">Sin proyectos asignados</p>
+            Sin proyectos
           </div>
         )}
 
