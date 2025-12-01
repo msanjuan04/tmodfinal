@@ -37,6 +37,41 @@ const DefaultIcon = L.icon({
 
 L.Marker.prototype.options.icon = DefaultIcon
 
+function normalizeAdminDashboard(raw: AdminDashboardData | null): AdminDashboardData | null {
+  if (!raw) return null
+
+  return {
+    summary: {
+      projects: {
+        total: raw.summary?.projects?.total ?? 0,
+        active: raw.summary?.projects?.active ?? 0,
+        completed: raw.summary?.projects?.completed ?? 0,
+        pending: raw.summary?.projects?.pending ?? 0,
+      },
+      averageProgress: raw.summary?.averageProgress ?? 0,
+      clients: {
+        total: raw.summary?.clients?.total ?? 0,
+        newThisMonth: raw.summary?.clients?.newThisMonth ?? 0,
+      },
+      billing: {
+        total: raw.summary?.billing?.total ?? 0,
+        pending: raw.summary?.billing?.pending ?? 0,
+        hasData: raw.summary?.billing?.hasData ?? false,
+      },
+    },
+    upcomingMilestones: raw.upcomingMilestones ?? [],
+    alerts: raw.alerts ?? [],
+    projectsProgress: raw.projectsProgress ?? [],
+    projectLocations: raw.projectLocations ?? [],
+    filters: {
+      statuses: raw.filters?.statuses ?? [],
+      managers: raw.filters?.managers ?? [],
+      activeStatus: raw.filters?.activeStatus,
+      activeManagerId: raw.filters?.activeManagerId,
+    },
+  }
+}
+
 export function AdminOverviewPage() {
   const [data, setData] = useState<AdminDashboardData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -53,7 +88,7 @@ export function AdminOverviewPage() {
         status: statusFilter || undefined,
         managerId: managerFilter || undefined,
       })
-      setData(response)
+      setData(normalizeAdminDashboard(response))
     } catch (err) {
       console.error("Error fetching admin dashboard", err)
       setError("No se pudo cargar el panel. Inténtalo de nuevo.")

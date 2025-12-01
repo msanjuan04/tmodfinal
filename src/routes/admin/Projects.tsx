@@ -239,9 +239,9 @@ export function AdminProjectsPage() {
 
   const statusSummary = useMemo(() => {
     const map = new Map<string, number>()
-    response?.filters.statuses.forEach((item) => map.set(item.value, item.count))
+    response?.filters?.statuses?.forEach?.((item) => map.set(item.value, item.count))
     return map
-  }, [response?.filters.statuses])
+  }, [response?.filters?.statuses])
 
   const loadProjects = useCallback(async () => {
     setLoading(true)
