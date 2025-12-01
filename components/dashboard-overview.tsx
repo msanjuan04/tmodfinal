@@ -25,6 +25,28 @@ import type { DashboardData } from "@/lib/supabase/queries"
 
 type DashboardFilter = "all" | "project" | "communication" | "media"
 
+type NormalizedDashboardData = ReturnType<typeof normalizeDashboardData>
+
+function normalizeDashboardData(data?: DashboardData) {
+  return {
+    project: {
+      name: data?.project?.name ?? "Proyecto",
+      status: data?.project?.status ?? "sin_estado",
+      progressPercent: data?.project?.progressPercent ?? 0,
+      startDate: data?.project?.startDate ?? null,
+      estimatedDelivery: data?.project?.estimatedDelivery ?? null,
+      remainingDays: data?.project?.remainingDays ?? null,
+      clientName: data?.project?.clientName ?? "",
+      managerName: data?.project?.managerName ?? "",
+    },
+    metrics: Array.isArray(data?.metrics) ? data.metrics : [],
+    milestones: Array.isArray(data?.milestones) ? data.milestones : [],
+    updates: Array.isArray(data?.updates) ? data.updates : [],
+    documents: Array.isArray(data?.documents) ? data.documents : [],
+    team: Array.isArray(data?.team) ? data.team : [],
+  }
+}
+
 const METRIC_ICON_MAP: Record<
   string,
   {
@@ -52,26 +74,30 @@ const UPDATE_ICON_MAP: Record<
 }
 
 export function DashboardOverview({ data }: { data: DashboardData }) {
-  // Asegúrate de proteger los accesos a datos para evitar crash en producción si alguna propiedad es undefined:
-  const safeMetrics = Array.isArray(data?.metrics) ? data.metrics : [];
-  const safeProject = data?.project ?? {};
-  const startDateLabel = formatDate(safeProject.startDate); // Ya usaba safe
-  const estimatedDeliveryLabel = formatDate(safeProject.estimatedDelivery);
-  const remainingDaysLabel = formatDays(safeProject.remainingDays);
+  const safeData = normalizeDashboardData(data)
+  const safeMetrics = safeData.metrics
+  const safeProject = safeData.project
+  const safeMilestones = safeData.milestones
+  const safeUpdates = safeData.updates
+  const safeTeam = safeData.team
+
+  const startDateLabel = formatDate(safeProject.startDate)
+  const estimatedDeliveryLabel = formatDate(safeProject.estimatedDelivery)
+  const remainingDaysLabel = formatDays(safeProject.remainingDays)
   const [activeFilter, setActiveFilter] = useState<DashboardFilter>("all")
 
   const filteredMetrics = useMemo(() => {
-    if (activeFilter === "all") return safeMetrics;
+    if (activeFilter === "all") return safeMetrics
     if (activeFilter === "project") {
-      return safeMetrics.filter((m) => m.code?.includes("milestones") || m.code?.includes("projects"));
+      return safeMetrics.filter((m) => m.code?.includes("milestones") || m.code?.includes("projects"))
     }
     if (activeFilter === "communication") {
-      return safeMetrics.filter((m) => m.code?.includes("messages") || m.code?.includes("documents"));
+      return safeMetrics.filter((m) => m.code?.includes("messages") || m.code?.includes("documents"))
     }
     if (activeFilter === "media") {
-      return safeMetrics.filter((m) => m.code?.includes("photos"));
+      return safeMetrics.filter((m) => m.code?.includes("photos"))
     }
-    return safeMetrics;
+    return safeMetrics
   }, [activeFilter, safeMetrics])
 
   return (
@@ -84,7 +110,7 @@ export function DashboardOverview({ data }: { data: DashboardData }) {
           </h1>
           <p className="max-w-xl text-sm text-[#6b7280]">
             Resumen del proyecto{" "}
-            <span className="font-semibold text-[#2f4f4f]">{data.project.name}</span> y su actividad reciente.
+            <span className="font-semibold text-[#2f4f4f]">{safeProject.name}</span> y su actividad reciente.
           </p>
         </div>
         <div className="flex w-full max-w-md items-center gap-3">
@@ -134,7 +160,7 @@ export function DashboardOverview({ data }: { data: DashboardData }) {
             </div>
             <div className="flex items-center gap-2">
               <Badge className="rounded-full bg-emerald-500/20 px-3 py-1 text-[11px] font-medium text-emerald-200">
-                {formatStatusLabel(data.project.status)}
+                {formatStatusLabel(safeProject.status)}
               </Badge>
             </div>
           </CardHeader>
@@ -142,19 +168,19 @@ export function DashboardOverview({ data }: { data: DashboardData }) {
             <div>
               <div className="mb-2 flex items-center justify-between text-xs">
                 <span className="text-white/80">Progreso general</span>
-                <span className="font-semibold">{Math.round(data.project.progressPercent)}%</span>
+                <span className="font-semibold">{Math.round(safeProject.progressPercent)}%</span>
               </div>
-              <Progress value={data.project.progressPercent} className="h-2.5 rounded-full bg-white/10" />
+              <Progress value={safeProject.progressPercent} className="h-2.5 rounded-full bg-white/10" />
             </div>
 
             {/* Pseudo revenue flow with milestones */}
             <div className="space-y-3">
               <div className="flex items-center justify-between text-xs text-white/70">
                 <span>Ritmo por hitos</span>
-                <span>{data.milestones.length || 0} hitos en curso</span>
+                <span>{safeMilestones.length || 0} hitos en curso</span>
               </div>
               <div className="flex items-end gap-3 rounded-[1.5rem] bg-black/10 p-3">
-                {data.milestones.slice(0, 6).map((milestone) => {
+                {safeMilestones.slice(0, 6).map((milestone) => {
                   const height = Math.max(20, Math.min(100, milestone.progressPercent || 0))
                   return (
                     <div key={milestone.id} className="flex flex-1 flex-col items-center gap-1">
@@ -170,7 +196,7 @@ export function DashboardOverview({ data }: { data: DashboardData }) {
                     </div>
                   )
                 })}
-                {data.milestones.length === 0 && (
+                {safeMilestones.length === 0 && (
                   <p className="w-full text-center text-xs text-white/60">
                     Añade hitos al proyecto para ver aquí su distribución.
                   </p>
@@ -188,27 +214,27 @@ export function DashboardOverview({ data }: { data: DashboardData }) {
 
         {/* Right column cards */}
         <div className="space-y-4">
-          <RightColumnSummaryCard data={data} />
-          <RightColumnActivityCard data={data} />
+          <RightColumnSummaryCard data={safeData} />
+          <RightColumnActivityCard data={safeData} />
         </div>
       </section>
 
       {/* Lower stats: doughnut + quick cards */}
       <section className="grid gap-6 lg:grid-cols-4">
-        <DoughnutCard data={data} />
+        <DoughnutCard data={safeData} />
         <StatsMiniCard
           label="Documentos"
-          metric={data.metrics.find((m) => m.code === "documents_total")}
+          metric={safeMetrics.find((m) => m.code === "documents_total")}
           accent="bg-emerald-100 text-emerald-700"
         />
         <StatsMiniCard
           label="Mensajes"
-          metric={data.metrics.find((m) => m.code === "messages_total")}
+          metric={safeMetrics.find((m) => m.code === "messages_total")}
           accent="bg-sky-100 text-sky-700"
         />
         <StatsMiniCard
           label="Fotos"
-          metric={data.metrics.find((m) => m.code === "photos_total")}
+          metric={safeMetrics.find((m) => m.code === "photos_total")}
           accent="bg-violet-100 text-violet-700"
         />
       </section>
@@ -223,10 +249,10 @@ export function DashboardOverview({ data }: { data: DashboardData }) {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {data.updates.length === 0 && (
+            {safeUpdates.length === 0 && (
               <p className="text-sm text-[#6b7280]">Aún no hay actualizaciones registradas.</p>
             )}
-            {data.updates.map((update) => {
+            {safeUpdates.map((update) => {
               const iconConfig = UPDATE_ICON_MAP[update.type] ?? UPDATE_ICON_MAP.info
               const Icon = iconConfig.icon
               return (
@@ -258,10 +284,10 @@ export function DashboardOverview({ data }: { data: DashboardData }) {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {data.team.length === 0 && (
+              {safeTeam.length === 0 && (
                 <p className="text-sm text-[#6b7280]">Aún no se han asignado miembros al proyecto.</p>
               )}
-              {data.team.map((member) => (
+              {safeTeam.map((member) => (
                 <TeamMember
                   key={member.id}
                   name={member.name}
@@ -282,10 +308,10 @@ export function DashboardOverview({ data }: { data: DashboardData }) {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {data.milestones.length === 0 && (
+                {safeMilestones.length === 0 && (
                   <p className="text-sm text-[#6b7280]">Sin hitos registrados.</p>
                 )}
-                {data.milestones.map((milestone) => (
+                {safeMilestones.map((milestone) => (
                   <MilestoneItem
                     key={milestone.id}
                     title={milestone.title}
@@ -330,7 +356,7 @@ function DashboardFilterPill({
   )
 }
 
-function RightColumnSummaryCard({ data }: { data: DashboardData }) {
+function RightColumnSummaryCard({ data }: { data: NormalizedDashboardData }) {
   const progress = Math.round(data.project.progressPercent)
   const totalUpdates = data.updates.length
   const totalDocs = data.metrics.find((m) => m.code === "documents_total")
@@ -378,7 +404,7 @@ function RightColumnSummaryCard({ data }: { data: DashboardData }) {
   )
 }
 
-function RightColumnActivityCard({ data }: { data: DashboardData }) {
+function RightColumnActivityCard({ data }: { data: NormalizedDashboardData }) {
   const emptyMetric = { code: "", value: 0 }
 
   return (
@@ -422,7 +448,7 @@ function RightColumnActivityCard({ data }: { data: DashboardData }) {
   )
 }
 
-function DoughnutCard({ data }: { data: DashboardData }) {
+function DoughnutCard({ data }: { data: NormalizedDashboardData }) {
   const documents = Number(
     data.metrics.find((m) => m.code === "documents_total")?.value ?? 0,
   )

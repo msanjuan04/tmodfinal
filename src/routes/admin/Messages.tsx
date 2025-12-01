@@ -159,6 +159,18 @@ export function AdminMessagesPage() {
     setActiveConversationId(conversationId)
   }
 
+  const conversationsCount = messages?.conversations.length ?? 0
+  const unreadTotal = messages?.conversations.reduce((sum, conversation) => sum + (conversation.unreadCount ?? 0), 0) ?? 0
+  const lastActivity = useMemo(() => {
+    const last = messages?.conversations
+      .map((conversation) => conversation.lastMessageAt)
+      .filter((value): value is string => Boolean(value))
+      .sort()
+      .at(-1)
+    if (!last) return "Sin actividad reciente"
+    return formatRelativeTime(last)
+  }, [messages])
+
   return (
     <div className="space-y-6 pb-16">
       <Card className="rounded-[1.5rem] border-[#E8E6E0] bg-white px-6 py-6 shadow-sm">
@@ -170,6 +182,11 @@ export function AdminMessagesPage() {
               <p className="max-w-2xl text-sm text-[#6B7280]">
                 Gestiona conversaciones con clientes y colaboradores. Filtra por proyecto para revisar el historial y dar seguimiento a cada hilo.
               </p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <StatPill label="Conversaciones" value={conversationsCount.toString()} helper="Activas en este proyecto" />
+              <StatPill label="Sin leer" value={unreadTotal.toString()} helper="Mensajes pendientes" />
+              <StatPill label="Última actividad" value={lastActivity} helper="" />
             </div>
             {selectedProject ? (
               <div className="rounded-[1.25rem] border border-[#E8E6E0] bg-[#F8F7F4] px-4 py-3 text-sm text-[#4B5563]">
@@ -269,11 +286,40 @@ export function AdminMessagesPage() {
         />
       ) : (
         <Card className="rounded-[1.25rem] border-[#E8E6E0] bg-white">
-          <CardContent className="py-12 text-center text-sm text-[#6B7280]">
-            Selecciona un proyecto para revisar sus conversaciones.
+          <CardContent className="space-y-3 py-12 text-center text-sm text-[#6B7280]">
+            <p>Selecciona un proyecto para revisar sus conversaciones.</p>
+            {projects.length === 0 ? (
+              <p className="text-xs text-[#9CA3AF]">Aún no hay proyectos disponibles.</p>
+            ) : null}
           </CardContent>
         </Card>
       )}
     </div>
   )
+}
+
+function StatPill({ label, value, helper }: { label: string; value: string; helper?: string }) {
+  return (
+    <div className="flex items-center justify-between rounded-[1rem] border border-[#E8E6E0] bg-[#F8F7F4] px-4 py-3">
+      <div>
+        <p className="text-[11px] uppercase tracking-[0.2em] text-[#C6B89E]">{label}</p>
+        <p className="text-lg font-semibold text-[#2F4F4F]">{value}</p>
+      </div>
+      {helper ? <p className="text-[11px] text-[#9CA3AF]">{helper}</p> : null}
+    </div>
+  )
+}
+
+function formatRelativeTime(value: string) {
+  const date = new Date(value)
+  const diffMs = Date.now() - date.getTime()
+  const minutes = Math.round(diffMs / (1000 * 60))
+  if (minutes < 1) return "Hace un momento"
+  if (minutes < 60) return `Hace ${minutes} min`
+  const hours = Math.round(minutes / 60)
+  if (hours < 24) return `Hace ${hours} h`
+  const days = Math.round(hours / 24)
+  if (days === 1) return "Ayer"
+  if (days < 7) return `Hace ${days} días`
+  return date.toLocaleDateString("es-ES", { day: "2-digit", month: "short" })
 }

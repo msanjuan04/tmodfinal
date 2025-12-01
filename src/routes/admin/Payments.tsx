@@ -62,6 +62,7 @@ const INITIAL_FORM = {
   amount: "",
   dueDate: "",
   budgetId: "" as string | undefined | "",
+  entryType: "income" as "income" | "expense",
 }
 
 function formatCurrency(amountCents: number | undefined, currency = "EUR") {
@@ -88,6 +89,22 @@ function formatFileSize(bytes: number) {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
   }
   return `${Math.round(bytes / 1024)} KB`
+}
+
+function paymentType(payment: AdminPaymentRecord) {
+  const metaType = typeof payment.metadata?.type === "string" ? (payment.metadata.type as string) : ""
+  if (payment.amountCents < 0 || metaType === "expense") return "expense" as const
+  return "income" as const
+}
+
+function normalizeAmountByType(amount: number, entryType: "income" | "expense") {
+  return entryType === "expense" ? -Math.abs(amount) : Math.abs(amount)
+}
+
+function formatSignedCurrency(amountCents: number | undefined, currency = "EUR") {
+  if (typeof amountCents !== "number" || Number.isNaN(amountCents)) return "—"
+  const sign = amountCents < 0 ? "-" : ""
+  return `${sign}${formatCurrency(Math.abs(amountCents), currency)}`
 }
 
 export function AdminPaymentsPage() {
@@ -146,6 +163,7 @@ export function AdminPaymentsPage() {
       amount: amountValue > 0 ? amountValue.toString() : "",
       dueDate: "",
       budgetId: fromBudgetId,
+      entryType: "income",
     })
     setSheetOpen(true)
 
@@ -175,7 +193,43 @@ export function AdminPaymentsPage() {
   const upcomingDueDateLabel = summary?.upcomingDueDate ? formatDate(summary.upcomingDueDate) : "—"
   const currency = summary?.currency ?? "EUR"
 
-  const monthlyIncome = useMemo(() => {
+  const finance = useMemo(() => {
+    let incomePaid = 0
+    let expensePaid = 0
+    let pendingIncome = 0
+    let pendingExpense = 0
+    let draftIncome = 0
+    let draftExpense = 0
+
+    payments.forEach((payment) => {
+      const amount = Math.abs(payment.amountCents ?? 0)
+      const type = paymentType(payment)
+
+      if (payment.status === "paid") {
+        if (type === "income") incomePaid += amount
+        else expensePaid += amount
+      } else if (payment.status === "pending") {
+        if (type === "income") pendingIncome += amount
+        else pendingExpense += amount
+      } else if (payment.status === "draft") {
+        if (type === "income") draftIncome += amount
+        else draftExpense += amount
+      }
+    })
+
+    return {
+      incomePaid,
+      expensePaid,
+      pendingIncome,
+      pendingExpense,
+      draftIncome,
+      draftExpense,
+      netPaid: incomePaid - expensePaid,
+      netPending: pendingIncome - pendingExpense,
+    }
+  }, [payments])
+
+  const monthlyNet = useMemo(() => {
     const now = new Date()
     const months = []
     for (let i = 5; i >= 0; i -= 1) {
@@ -186,7 +240,11 @@ export function AdminPaymentsPage() {
         const paidDate = new Date(payment.paidAt)
         return paidDate.getMonth() === date.getMonth() && paidDate.getFullYear() === date.getFullYear()
       })
-      const totalCents = monthPayments.reduce((acc, payment) => acc + (payment.amountCents ?? 0), 0)
+      const totalCents = monthPayments.reduce((acc, payment) => {
+        const type = paymentType(payment)
+        const signed = normalizeAmountByType(Math.abs(payment.amountCents ?? 0), type)
+        return acc + signed
+      }, 0)
       months.push({ label, value: totalCents / 100 })
     }
     return months
@@ -204,27 +262,27 @@ export function AdminPaymentsPage() {
 
   const summaryCards = [
     {
-      label: "Pagos cobrados",
-      value: formatCurrency(summary?.totalPaidCents, currency),
+      label: "Ingresos cobrados",
+      value: formatCurrency(finance.incomePaid, currency),
       helper: `${summary?.totalCount ?? 0} totales`,
       icon: CreditCard,
     },
     {
-      label: "Pendientes",
-      value: formatCurrency(summary?.totalPendingCents, currency),
-      helper: `${summary?.overdueCount ?? 0} vencidos`,
+      label: "Gastos pagados",
+      value: `-${formatCurrency(finance.expensePaid, currency)}`,
+      helper: "Egresos liquidados",
       icon: FileSpreadsheet,
     },
     {
-      label: "En borrador",
-      value: formatCurrency(summary?.totalDraftCents, currency),
-      helper: "Aún no enviados",
+      label: "Pendiente (neto)",
+      value: formatSignedCurrency(finance.netPending, currency),
+      helper: `${summary?.overdueCount ?? 0} vencidos`,
       icon: Pencil,
     },
     {
       label: "Próximo vencimiento",
       value: upcomingDueDateLabel,
-      helper: "Agenda de cobros",
+      helper: "Agenda de cobros/pagos",
       icon: Calendar,
     },
   ]
@@ -274,13 +332,15 @@ export function AdminPaymentsPage() {
   const openEditForm = useCallback((payment: AdminPaymentRecord) => {
     setFormMode("edit")
     setEditingPayment(payment)
+    const type = paymentType(payment)
     setForm({
       projectId: payment.projectId,
       concept: payment.concept,
       description: payment.description ?? "",
-      amount: (payment.amountCents / 100).toString(),
+      amount: Math.abs(payment.amountCents / 100).toString(),
       dueDate: payment.dueDate ?? "",
       budgetId: payment.budgetId ?? undefined,
+      entryType: type,
     })
     setFormError(null)
     setAttachmentFile(null)
@@ -315,6 +375,8 @@ export function AdminPaymentsPage() {
     setSubmitting(true)
 
     try {
+      const signedAmount = normalizeAmountByType(normalizedAmount, form.entryType)
+
       let attachmentPayload: CreateAdminPaymentPayload["attachment"] | undefined
       if (attachmentFile) {
         try {
@@ -336,7 +398,7 @@ export function AdminPaymentsPage() {
         const payload: UpdateAdminPaymentPayload = {
           concept: trimmedConcept,
           description: form.description.trim() || undefined,
-          amount: editingPayment.status === "draft" ? normalizedAmount : undefined,
+          amount: editingPayment.status === "draft" ? signedAmount : undefined,
           currency: editingPayment.status === "draft" ? "EUR" : undefined,
           dueDate: form.dueDate || null,
           attachment: attachmentPayload,
@@ -348,7 +410,7 @@ export function AdminPaymentsPage() {
           projectId: form.projectId,
           concept: trimmedConcept,
           description: form.description.trim() || undefined,
-          amount: normalizedAmount,
+          amount: signedAmount,
           currency: "EUR",
           dueDate: form.dueDate || null,
           attachment: attachmentPayload,
@@ -418,14 +480,14 @@ export function AdminPaymentsPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-[#2F4F4F]">
               <TrendingUp className="h-5 w-5" />
-              Ingresos últimos 6 meses
+              Flujo (ingresos - gastos)
             </CardTitle>
             <CardDescription className="text-sm text-[#6B7280]">
-              Evolución de cobros confirmados (estado pagado)
+              Evolución neta de movimientos confirmados (estado pagado)
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <PaymentsTrendChart data={monthlyIncome} currency={currency} />
+            <PaymentsTrendChart data={monthlyNet} currency={currency} />
           </CardContent>
         </Card>
         <AlertsCard overdueCount={summary?.overdueCount ?? 0} upcomingLabel={upcomingDueDateLabel} alerts={overduePayments} />
@@ -539,7 +601,24 @@ export function AdminPaymentsPage() {
                 />
               </div>
 
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-4 sm:grid-cols-3">
+                <div className="space-y-2">
+                  <Label htmlFor="payment-type">Tipo</Label>
+                  <select
+                    id="payment-type"
+                    className="w-full rounded-[0.75rem] border border-[#E8E6E0] bg-[#F8F7F4] px-3 py-2 text-sm text-[#2F4F4F] focus:outline-none focus:ring-2 focus:ring-[#2F4F4F]/20"
+                    value={form.entryType}
+                    onChange={(event) =>
+                      setForm((current) => ({ ...current, entryType: event.target.value as "income" | "expense" }))
+                    }
+                  >
+                    <option value="income">Ingreso</option>
+                    <option value="expense">Gasto</option>
+                  </select>
+                  <p className="text-[11px] text-[#9CA3AF]">
+                    Los gastos restan del total y se muestran en negativo.
+                  </p>
+                </div>
                 <div className="space-y-2">
                   <Label htmlFor="payment-amount">Importe (EUR)</Label>
                   <Input
@@ -669,19 +748,25 @@ function PaymentSummaryCard({ card }: { card: SummaryCardData }) {
 }
 
 function PaymentsTrendChart({ data, currency }: { data: Array<{ label: string; value: number }>; currency: string }) {
-  const max = Math.max(...data.map((item) => item.value), 1)
+  const max = Math.max(...data.map((item) => Math.abs(item.value)), 1)
   return (
     <div className="flex items-end gap-4">
       {data.map((item) => (
         <div key={item.label} className="flex flex-1 flex-col items-center gap-2">
           <div className="relative flex h-40 w-full items-end rounded-[1.5rem] bg-[#F5F5F5]">
             <div
-              className="w-full rounded-[1.5rem] bg-gradient-to-t from-[#2F4F4F] to-[#4A6B6B] shadow-apple"
-              style={{ height: `${Math.max((item.value / max) * 100, 5)}%` }}
+              className={`w-full rounded-[1.5rem] ${
+                item.value >= 0
+                  ? "bg-gradient-to-t from-[#2F4F4F] to-[#4A6B6B]"
+                  : "bg-gradient-to-t from-[#FCA5A5] to-[#FB7185]"
+              } shadow-apple`}
+              style={{ height: `${Math.max((Math.abs(item.value) / max) * 100, 5)}%` }}
             />
           </div>
           <p className="text-xs font-semibold text-[#2F4F4F] uppercase tracking-[0.2em]">{item.label}</p>
-          <p className="text-xs text-[#6B7280]">{formatCurrency(Math.round(item.value * 100), currency)}</p>
+          <p className="text-xs text-[#6B7280]">
+            {formatSignedCurrency(Math.round(item.value * 100), currency)}
+          </p>
         </div>
       ))}
     </div>
@@ -720,7 +805,7 @@ function AlertsCard({
               <div key={payment.id} className="rounded-[1rem] border border-[#FEE2E2] bg-white px-3 py-2 text-sm shadow-apple-sm">
                 <p className="font-medium text-[#B91C1C]">{payment.concept}</p>
                 <p className="text-xs text-[#6B7280]">
-                  Vencido el {formatDate(payment.dueDate)} · {formatCurrency(payment.amountCents, payment.currency)}
+                  Vencido el {formatDate(payment.dueDate)} · {formatSignedCurrency(payment.amountCents, payment.currency)}
                 </p>
               </div>
             ))
@@ -742,6 +827,7 @@ function PaymentCard({
   onEdit: () => void
   onDelete: () => void
 }) {
+  const type = paymentType(payment)
   const isOverdue =
     payment.dueDate && payment.status !== "paid" && payment.status !== "canceled"
       ? new Date(payment.dueDate).getTime() < Date.now()
@@ -764,6 +850,13 @@ function PaymentCard({
           <div className="flex items-center gap-2">
             <StatusIcon className="h-4 w-4 text-[#2F4F4F]" />
             <p className="font-heading text-lg text-[#2F4F4F]">{payment.concept}</p>
+            <Badge
+              className={`${
+                type === "income" ? "bg-[#DCFCE7] text-[#166534]" : "bg-[#FEE2E2] text-[#B91C1C]"
+              }`}
+            >
+              {type === "income" ? "Ingreso" : "Gasto"}
+            </Badge>
           </div>
           <div className="text-sm text-[#6B7280]">
             {payment.projectSlug ? (
@@ -799,7 +892,7 @@ function PaymentCard({
         <div className="flex flex-col items-end gap-2 text-right">
           <Badge className={STATUS_BADGES[payment.status]}>{STATUS_LABELS[payment.status]}</Badge>
           <p className="text-2xl font-semibold text-[#2F4F4F]">
-            {formatCurrency(payment.amountCents, payment.currency)}
+            {formatSignedCurrency(payment.amountCents, payment.currency)}
           </p>
           {isOverdue ? (
             <Badge className="bg-[#FEE2E2] text-[#B91C1C]">Pago vencido</Badge>

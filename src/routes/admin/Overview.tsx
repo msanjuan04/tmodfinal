@@ -37,6 +37,25 @@ const DefaultIcon = L.icon({
 
 L.Marker.prototype.options.icon = DefaultIcon
 
+const EMPTY_DASHBOARD: AdminDashboardData = {
+  summary: {
+    projects: { total: 0, active: 0, completed: 0, pending: 0 },
+    averageProgress: 0,
+    clients: { total: 0, newThisMonth: 0 },
+    billing: { total: 0, pending: 0, hasData: false },
+  },
+  upcomingMilestones: [],
+  alerts: [],
+  projectsProgress: [],
+  projectLocations: [],
+  filters: {
+    statuses: [],
+    managers: [],
+    activeStatus: undefined,
+    activeManagerId: undefined,
+  },
+}
+
 function normalizeAdminDashboard(raw: AdminDashboardData | null): AdminDashboardData | null {
   if (!raw) return null
 
@@ -80,6 +99,9 @@ export function AdminOverviewPage() {
   const [refreshToken, setRefreshToken] = useState(0)
   const [error, setError] = useState<string | null>(null)
 
+  const safeData = data ?? EMPTY_DASHBOARD
+  const shouldShowData = Boolean(data) || (!loading && !error)
+
   const loadDashboard = useCallback(async () => {
     try {
       setLoading(true)
@@ -102,14 +124,12 @@ export function AdminOverviewPage() {
   }, [loadDashboard, refreshToken])
 
   const statusOptions = useMemo(() => {
-    if (!data) return []
-    return data.filters.statuses.map((value) => ({ value, label: STATUS_LABELS[value] ?? value }))
-  }, [data])
+    return safeData.filters.statuses.map((value) => ({ value, label: STATUS_LABELS[value] ?? value }))
+  }, [safeData.filters.statuses])
 
   const managerOptions = useMemo(() => {
-    if (!data) return []
-    return data.filters.managers
-  }, [data])
+    return safeData.filters.managers
+  }, [safeData.filters.managers])
 
   const handleRefresh = () => setRefreshToken((prev) => prev + 1)
 
@@ -185,7 +205,7 @@ export function AdminOverviewPage() {
         </Card>
       ) : null}
 
-      {data ? (
+      {shouldShowData ? (
         <div className="space-y-8">
           {/* Tarjeta principal tipo hero con KPIs */}
           <section className="grid gap-4 lg:grid-cols-[2.2fr,1.3fr]">
@@ -199,7 +219,7 @@ export function AdminOverviewPage() {
                     </CardDescription>
                   </div>
                   <Badge className="rounded-full bg-emerald-500/20 px-3 py-1 text-[11px] font-medium text-emerald-200">
-                    {data.summary.projects.active} activos · {data.summary.projects.completed} finalizados
+                    {safeData.summary.projects.active} activos · {safeData.summary.projects.completed} finalizados
                   </Badge>
                 </div>
               </CardHeader>
@@ -208,19 +228,19 @@ export function AdminOverviewPage() {
                   <div className="mb-1 flex items-center justify-between text-xs text-white/80">
                     <span>Avance medio global</span>
                     <span className="font-semibold">
-                      {Math.round(data.summary.averageProgress)}%
+                      {Math.round(safeData.summary.averageProgress)}%
                     </span>
                   </div>
-                  <Progress value={data.summary.averageProgress} className="h-2.5 rounded-full bg-white/10" />
+                  <Progress value={safeData.summary.averageProgress} className="h-2.5 rounded-full bg-white/10" />
                 </div>
                 <div className="h-[260px] rounded-[1.5rem] bg-black/10 px-2 py-2">
-                  {data.projectsProgress.length === 0 ? (
+                  {safeData.projectsProgress.length === 0 ? (
                     <div className="flex h-full items-center justify-center text-sm text-white/70">
                       Sin proyectos en este filtro.
                     </div>
                   ) : (
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={data.projectsProgress} margin={{ top: 10, right: 16, left: 0, bottom: 24 }}>
+                      <BarChart data={safeData.projectsProgress} margin={{ top: 10, right: 16, left: 0, bottom: 24 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="rgba(248,247,244,0.12)" />
                         <XAxis
                           dataKey="name"
@@ -245,7 +265,7 @@ export function AdminOverviewPage() {
                           }}
                         />
                         <Bar dataKey="progressPercent" radius={[8, 8, 0, 0]}>
-                          {data.projectsProgress.map((item, index) => (
+                          {safeData.projectsProgress.map((item, index) => (
                             <Cell key={item.id} fill={BAR_COLORS[index % BAR_COLORS.length]} />
                           ))}
                         </Bar>
@@ -271,14 +291,14 @@ export function AdminOverviewPage() {
                   <MiniKpiCard
                     icon={FolderKanban}
                     label="Proyectos activos"
-                    value={data.summary.projects.active}
-                    helper={`Total: ${data.summary.projects.total}`}
+                    value={safeData.summary.projects.active}
+                    helper={`Total: ${safeData.summary.projects.total}`}
                   />
                   <MiniKpiCard
                     icon={Users}
                     label="Clientes activos"
-                    value={data.summary.clients.total}
-                    helper={`${data.summary.clients.newThisMonth} nuevos este mes`}
+                    value={safeData.summary.clients.total}
+                    helper={`${safeData.summary.clients.newThisMonth} nuevos este mes`}
                   />
                 </div>
                 <div className="rounded-[1.25rem] border border-[#E8E6E0] bg-[#F8F7F4] p-4 text-xs text-[#4B5563]">
@@ -286,10 +306,10 @@ export function AdminOverviewPage() {
                     <span className="font-semibold text-[#2F4F4F]">Facturación</span>
                     <CalendarDays className="h-4 w-4 text-[#9CA3AF]" />
                   </div>
-                  {data.summary.billing.hasData ? (
+                  {safeData.summary.billing.hasData ? (
                     <div className="mt-2 space-y-1">
-                      <p>Total facturado: {formatCurrency(data.summary.billing.total ?? 0)}</p>
-                      <p>Pendiente: {formatCurrency(data.summary.billing.pending ?? 0)}</p>
+                      <p>Total facturado: {formatCurrency(safeData.summary.billing.total ?? 0)}</p>
+                      <p>Pendiente: {formatCurrency(safeData.summary.billing.pending ?? 0)}</p>
                     </div>
                   ) : (
                     <p className="mt-2 text-[#6B7280]">
@@ -300,8 +320,8 @@ export function AdminOverviewPage() {
                 <div className="flex items-center gap-2 rounded-[1.25rem] bg-[#FEF3C7] px-3 py-2 text-xs text-[#92400E]">
                   <AlertTriangle className="h-4 w-4" />
                   <span>
-                    {data.alerts.length > 0
-                      ? `${data.alerts.length} alerta(s) prioritaria(s) en proyectos activos.`
+                    {safeData.alerts.length > 0
+                      ? `${safeData.alerts.length} alerta(s) prioritaria(s) en proyectos activos.`
                       : "Sin alertas activas. Todo en orden."}
                   </span>
                 </div>
@@ -314,27 +334,27 @@ export function AdminOverviewPage() {
             <div className="space-y-4 lg:col-span-1">
             <StatCard
               title="Proyectos activos"
-              value={data.summary.projects.active}
-              description={`Total: ${data.summary.projects.total}`}
+              value={safeData.summary.projects.active}
+              description={`Total: ${safeData.summary.projects.total}`}
             />
             <StatCard
               title="Proyectos finalizados"
-              value={data.summary.projects.completed}
-              description={`${data.summary.projects.pending} pendientes`}
+              value={safeData.summary.projects.completed}
+              description={`${safeData.summary.projects.pending} pendientes`}
             />
             <StatCard
               title="Clientes activos"
-              value={data.summary.clients.total}
-              description={`${data.summary.clients.newThisMonth} nuevos este mes`}
+              value={safeData.summary.clients.total}
+              description={`${safeData.summary.clients.newThisMonth} nuevos este mes`}
             />
             <StatCard
               title="Avance medio"
-              value={`${Math.round(data.summary.averageProgress)}%`}
+              value={`${Math.round(safeData.summary.averageProgress)}%`}
               description="Promedio ponderado del progreso"
             />
                   </div>
             <div className="lg:col-span-2">
-              <ProjectsMapCard locations={data.projectLocations ?? []} />
+              <ProjectsMapCard locations={safeData.projectLocations ?? []} />
                 </div>
           </section>
 
@@ -346,10 +366,10 @@ export function AdminOverviewPage() {
                 <CardDescription>Hitos previstos para el próximo mes, sincronizados con el calendario.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
-                {data.upcomingMilestones.length === 0 ? (
+                {safeData.upcomingMilestones.length === 0 ? (
                   <EmptyState message="No hay hitos programados en las próximas semanas." />
                 ) : (
-                  data.upcomingMilestones.map((milestone) => (
+                  safeData.upcomingMilestones.map((milestone) => (
                     <article key={milestone.id} className="rounded-[1.25rem] border border-[#E8E6E0] bg-[#F8F7F4] p-4">
                       <div className="flex items-start justify-between gap-3">
                         <div>
@@ -373,10 +393,10 @@ export function AdminOverviewPage() {
                 <CardDescription>Proyectos con incidencias o fechas comprometidas.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
-                {data.alerts.length === 0 ? (
+                {safeData.alerts.length === 0 ? (
                   <EmptyState message="Sin alertas activas. Todo en orden." />
                 ) : (
-                  data.alerts.map((alert) => (
+                  safeData.alerts.map((alert) => (
                     <AlertCard key={alert.id} alert={alert} />
                   ))
                 )}
