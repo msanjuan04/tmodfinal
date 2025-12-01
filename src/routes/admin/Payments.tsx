@@ -3,7 +3,21 @@ import { Link, useSearchParams } from "react-router-dom"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import { toast } from "sonner"
-import { AlertCircle, CreditCard, FileSpreadsheet, Loader2, Paperclip, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react"
+import {
+  AlertCircle,
+  Calendar,
+  CheckCircle,
+  Clock,
+  CreditCard,
+  FileSpreadsheet,
+  Loader2,
+  Paperclip,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Trash2,
+  TrendingUp,
+} from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -159,6 +173,61 @@ export function AdminPaymentsPage() {
   }, [])
 
   const upcomingDueDateLabel = summary?.upcomingDueDate ? formatDate(summary.upcomingDueDate) : "—"
+  const currency = summary?.currency ?? "EUR"
+
+  const monthlyIncome = useMemo(() => {
+    const now = new Date()
+    const months = []
+    for (let i = 5; i >= 0; i -= 1) {
+      const date = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      const label = date.toLocaleDateString("es-ES", { month: "short" })
+      const monthPayments = payments.filter((payment) => {
+        if (payment.status !== "paid" || !payment.paidAt) return false
+        const paidDate = new Date(payment.paidAt)
+        return paidDate.getMonth() === date.getMonth() && paidDate.getFullYear() === date.getFullYear()
+      })
+      const totalCents = monthPayments.reduce((acc, payment) => acc + (payment.amountCents ?? 0), 0)
+      months.push({ label, value: totalCents / 100 })
+    }
+    return months
+  }, [payments])
+
+  const overduePayments = useMemo(
+    () =>
+      payments.filter((payment) => {
+        if (!payment.dueDate || payment.status === "paid" || payment.status === "canceled") return false
+        const due = new Date(payment.dueDate)
+        return due.getTime() < Date.now()
+      }),
+    [payments],
+  )
+
+  const summaryCards = [
+    {
+      label: "Pagos cobrados",
+      value: formatCurrency(summary?.totalPaidCents, currency),
+      helper: `${summary?.totalCount ?? 0} totales`,
+      icon: CreditCard,
+    },
+    {
+      label: "Pendientes",
+      value: formatCurrency(summary?.totalPendingCents, currency),
+      helper: `${summary?.overdueCount ?? 0} vencidos`,
+      icon: FileSpreadsheet,
+    },
+    {
+      label: "En borrador",
+      value: formatCurrency(summary?.totalDraftCents, currency),
+      helper: "Aún no enviados",
+      icon: Pencil,
+    },
+    {
+      label: "Próximo vencimiento",
+      value: upcomingDueDateLabel,
+      helper: "Agenda de cobros",
+      icon: Calendar,
+    },
+  ]
 
   const canSubmit = useMemo(() => {
     const amountNumber = Number(form.amount.replace(",", "."))
@@ -338,28 +407,29 @@ export function AdminPaymentsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 p-0">
-          <div className="rounded-[1.25rem] border border-[#E8E6E0] bg-[#F8F7F4] p-4">
-            <p className="text-xs uppercase tracking-[0.3em] text-[#C6B89E]">Pendiente</p>
-            <p className="mt-2 text-2xl font-semibold text-[#2F4F4F]">{formatCurrency(summary?.totalPendingCents, summary?.currency)}</p>
-            <p className="mt-1 text-xs text-[#6B7280]">Pagos enviados al cliente</p>
-          </div>
-          <div className="rounded-[1.25rem] border border-[#E8E6E0] bg-white p-4">
-            <p className="text-xs uppercase tracking-[0.3em] text-[#C6B89E]">Borradores</p>
-            <p className="mt-2 text-2xl font-semibold text-[#2F4F4F]">{formatCurrency(summary?.totalDraftCents, summary?.currency)}</p>
-            <p className="mt-1 text-xs text-[#6B7280]">Aún no enviados</p>
-          </div>
-          <div className="rounded-[1.25rem] border border-[#E8E6E0] bg-white p-4">
-            <p className="text-xs uppercase tracking-[0.3em] text-[#C6B89E]">Pagado</p>
-            <p className="mt-2 text-2xl font-semibold text-[#2F4F4F]">{formatCurrency(summary?.totalPaidCents, summary?.currency)}</p>
-            <p className="mt-1 text-xs text-[#6B7280]">Confirmado vía Stripe</p>
-          </div>
-          <div className="rounded-[1.25rem] border border-[#E8E6E0] bg-white p-4">
-            <p className="text-xs uppercase tracking-[0.3em] text-[#C6B89E]">Próximo vencimiento</p>
-            <p className="mt-2 text-xl font-semibold text-[#2F4F4F]">{upcomingDueDateLabel}</p>
-            <p className="mt-1 text-xs text-[#B91C1C]">{summary?.overdueCount ? `${summary.overdueCount} atrasado(s)` : "Sin atrasos"}</p>
-          </div>
+          {summaryCards.map((card) => (
+            <PaymentSummaryCard key={card.label} card={card} />
+          ))}
         </CardContent>
       </Card>
+
+      <section className="grid gap-6 lg:grid-cols-[2fr,1fr]">
+        <Card className="rounded-[1.5rem] border-[#E8E6E0] bg-white/90 shadow-apple-md">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-[#2F4F4F]">
+              <TrendingUp className="h-5 w-5" />
+              Ingresos últimos 6 meses
+            </CardTitle>
+            <CardDescription className="text-sm text-[#6B7280]">
+              Evolución de cobros confirmados (estado pagado)
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <PaymentsTrendChart data={monthlyIncome} currency={currency} />
+          </CardContent>
+        </Card>
+        <AlertsCard overdueCount={summary?.overdueCount ?? 0} upcomingLabel={upcomingDueDateLabel} alerts={overduePayments} />
+      </section>
 
       <div className="flex flex-wrap items-center gap-3">
         <Button
@@ -556,91 +626,210 @@ export function AdminPaymentsPage() {
             </div>
           ) : (
             payments.map((payment) => (
-              <div
+              <PaymentCard
                 key={payment.id}
-                className="grid gap-4 rounded-[1.25rem] border border-[#E8E6E0] bg-white px-4 py-5 shadow-apple md:grid-cols-[2fr_1.5fr_1fr_auto]"
-              >
-                <div>
-                  <p className="font-heading text-lg text-[#2F4F4F]">{payment.concept}</p>
-                  <div className="mt-1 text-sm text-[#6B7280]">
-                    {payment.projectSlug ? (
-                      <Link to={`/dashboard/projects/${payment.projectSlug}`} className="font-medium text-[#2F4F4F] hover:underline">
-                        {payment.projectName}
-                      </Link>
-                    ) : (
-                      <span className="font-medium text-[#2F4F4F]">{payment.projectName}</span>
-                    )}
-                    {payment.clientName ? <> · {payment.clientName}</> : null}
-                  </div>
-                  {payment.budgetId ? (
-                    <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-[#F8F7F4] px-3 py-1 text-xs text-[#374151]">
-                      <FileSpreadsheet className="h-3 w-3 text-[#2F4F4F]" />
-                      <span>Vinculado a presupuesto</span>
-                    </div>
-                  ) : null}
-                  {payment.description ? <p className="mt-2 text-sm text-[#4B5563]">{payment.description}</p> : null}
-                  {payment.proposalDocumentUrl ? (
-                    <a
-                      href={payment.proposalDocumentUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="mt-2 inline-flex items-center gap-2 text-sm text-[#2563EB]"
-                    >
-                      <Paperclip className="h-4 w-4" />
-                      Ver presupuesto PDF
-                    </a>
-                  ) : payment.proposalDocumentName ? (
-                    <p className="mt-2 text-xs text-[#9CA3AF]">Presupuesto adjunto: {payment.proposalDocumentName}</p>
-                  ) : null}
-                </div>
-                <div className="space-y-1 text-sm text-[#4B5563]">
-                  <p>Vencimiento: <span className="font-medium text-[#2F4F4F]">{formatDate(payment.dueDate)}</span></p>
-                  <p>Creado: {formatDate(payment.createdAt)}</p>
-                  {payment.paymentLink ? (
-                    <a href={payment.paymentLink} className="text-[#2563EB]" target="_blank" rel="noreferrer">
-                      Ver enlace de pago
-                    </a>
-                  ) : null}
-                </div>
-                <div className="flex flex-col gap-2">
-                  <Badge className={STATUS_BADGES[payment.status]}>{STATUS_LABELS[payment.status]}</Badge>
-                  <p className="text-lg font-semibold text-[#2F4F4F]">{formatCurrency(payment.amountCents, payment.currency)}</p>
-                </div>
-                <div className="flex flex-col items-end gap-3 text-right">
-                  <p className="text-xs text-[#9CA3AF]">ID {payment.id.slice(0, 8).toUpperCase()}</p>
-                  <div className="flex flex-wrap justify-end gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="rounded-full border-[#E8E6E0] text-[#2F4F4F] hover:bg-[#F8F7F4]"
-                      onClick={() => openEditForm(payment)}
-                    >
-                      <Pencil className="mr-2 h-4 w-4" />
-                      Editar
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="rounded-full border-[#FCA5A5] text-[#B91C1C] hover:bg-[#FEF2F2]"
-                      disabled={actionPaymentId === payment.id}
-                      onClick={() => {
-                        void handleDeletePayment(payment)
-                      }}
-                    >
-                      {actionPaymentId === payment.id ? (
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      ) : (
-                        <Trash2 className="mr-2 h-4 w-4" />
-                      )}
-                      Eliminar
-                    </Button>
-                  </div>
-                </div>
-              </div>
+                payment={payment}
+                deleting={actionPaymentId === payment.id}
+                onEdit={() => openEditForm(payment)}
+                onDelete={() => {
+                  void handleDeletePayment(payment)
+                }}
+              />
             ))
           )}
         </CardContent>
       </Card>
+    </div>
+  )
+}
+
+interface SummaryCardData {
+  label: string
+  value: string
+  helper: string
+  icon: typeof CreditCard
+}
+
+function PaymentSummaryCard({ card }: { card: SummaryCardData }) {
+  const Icon = card.icon
+  return (
+    <div className="group flex flex-col gap-3 rounded-[1.4rem] border border-[#E8E6E0] bg-white/90 p-4 shadow-apple transition hover:-translate-y-1 hover:shadow-apple-xl">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-xs uppercase tracking-[0.3em] text-[#C6B89E]">{card.label}</p>
+          <p className="mt-2 text-3xl font-bold text-[#2F4F4F]">{card.value}</p>
+        </div>
+        <div className="rounded-[1rem] bg-[#2F4F4F] p-3 text-white shadow-apple">
+          <Icon className="h-6 w-6" />
+        </div>
+      </div>
+      <p className="text-xs text-[#6B7280]">{card.helper}</p>
+    </div>
+  )
+}
+
+function PaymentsTrendChart({ data, currency }: { data: Array<{ label: string; value: number }>; currency: string }) {
+  const max = Math.max(...data.map((item) => item.value), 1)
+  return (
+    <div className="flex items-end gap-4">
+      {data.map((item) => (
+        <div key={item.label} className="flex flex-1 flex-col items-center gap-2">
+          <div className="relative flex h-40 w-full items-end rounded-[1.5rem] bg-[#F5F5F5]">
+            <div
+              className="w-full rounded-[1.5rem] bg-gradient-to-t from-[#2F4F4F] to-[#4A6B6B] shadow-apple"
+              style={{ height: `${Math.max((item.value / max) * 100, 5)}%` }}
+            />
+          </div>
+          <p className="text-xs font-semibold text-[#2F4F4F] uppercase tracking-[0.2em]">{item.label}</p>
+          <p className="text-xs text-[#6B7280]">{formatCurrency(Math.round(item.value * 100), currency)}</p>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function AlertsCard({
+  overdueCount,
+  upcomingLabel,
+  alerts,
+}: {
+  overdueCount: number
+  upcomingLabel: string
+  alerts: AdminPaymentRecord[]
+}) {
+  return (
+    <Card className="rounded-[1.5rem] border-[#E8E6E0] bg-white/90 shadow-apple-md">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-[#2F4F4F]">
+          <AlertCircle className="h-5 w-5 text-[#B91C1C]" />
+          Alertas de cobro
+        </CardTitle>
+        <CardDescription className="text-sm text-[#6B7280]">
+          {overdueCount > 0 ? `${overdueCount} pagos vencidos` : "Sin pagos atrasados"}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="rounded-[1.2rem] border border-[#FEE2E2] bg-[#FEF2F2] px-4 py-3 text-sm text-[#B91C1C]">
+          Próximo vencimiento: <span className="font-semibold">{upcomingLabel}</span>
+        </div>
+        <div className="space-y-3">
+          {alerts.length === 0 ? (
+            <p className="text-sm text-[#6B7280]">No hay pagos vencidos. Sigue así 👏</p>
+          ) : (
+            alerts.slice(0, 3).map((payment) => (
+              <div key={payment.id} className="rounded-[1rem] border border-[#FEE2E2] bg-white px-3 py-2 text-sm shadow-apple-sm">
+                <p className="font-medium text-[#B91C1C]">{payment.concept}</p>
+                <p className="text-xs text-[#6B7280]">
+                  Vencido el {formatDate(payment.dueDate)} · {formatCurrency(payment.amountCents, payment.currency)}
+                </p>
+              </div>
+            ))
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function PaymentCard({
+  payment,
+  deleting,
+  onEdit,
+  onDelete,
+}: {
+  payment: AdminPaymentRecord
+  deleting: boolean
+  onEdit: () => void
+  onDelete: () => void
+}) {
+  const isOverdue =
+    payment.dueDate && payment.status !== "paid" && payment.status !== "canceled"
+      ? new Date(payment.dueDate).getTime() < Date.now()
+      : false
+
+  const statusIconMap: Record<PaymentStatus, typeof CreditCard> = {
+    draft: Pencil,
+    pending: Clock,
+    paid: CheckCircle,
+    failed: AlertCircle,
+    canceled: Trash2,
+  }
+
+  const StatusIcon = statusIconMap[payment.status] ?? CreditCard
+
+  return (
+    <div className="space-y-3 rounded-[1.25rem] border border-[#E8E6E0] bg-white px-4 py-5 shadow-apple transition hover:-translate-y-1 hover:shadow-apple-xl">
+      <div className="flex flex-wrap items-start gap-3">
+        <div className="flex flex-1 flex-col gap-2">
+          <div className="flex items-center gap-2">
+            <StatusIcon className="h-4 w-4 text-[#2F4F4F]" />
+            <p className="font-heading text-lg text-[#2F4F4F]">{payment.concept}</p>
+          </div>
+          <div className="text-sm text-[#6B7280]">
+            {payment.projectSlug ? (
+              <Link to={`/dashboard/projects/${payment.projectSlug}`} className="font-medium text-[#2F4F4F] hover:underline">
+                {payment.projectName}
+              </Link>
+            ) : (
+              <span className="font-medium text-[#2F4F4F]">{payment.projectName}</span>
+            )}
+            {payment.clientName ? <> · {payment.clientName}</> : null}
+          </div>
+          {payment.description ? <p className="text-sm text-[#4B5563]">{payment.description}</p> : null}
+          {payment.proposalDocumentUrl ? (
+            <a href={payment.proposalDocumentUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-sm text-[#2563EB]">
+              <Paperclip className="h-4 w-4" />
+              Ver presupuesto PDF
+            </a>
+          ) : null}
+          <div className="flex flex-wrap items-center gap-2 text-xs text-[#6B7280]">
+            <span>Creado: {formatDate(payment.createdAt)}</span>
+            <span>·</span>
+            <span>Vence: {formatDate(payment.dueDate)}</span>
+            {payment.paymentLink ? (
+              <>
+                <span>·</span>
+                <a href={payment.paymentLink} target="_blank" rel="noreferrer" className="text-[#2563EB]">
+                  Enlace de pago
+                </a>
+              </>
+            ) : null}
+          </div>
+        </div>
+        <div className="flex flex-col items-end gap-2 text-right">
+          <Badge className={STATUS_BADGES[payment.status]}>{STATUS_LABELS[payment.status]}</Badge>
+          <p className="text-2xl font-semibold text-[#2F4F4F]">
+            {formatCurrency(payment.amountCents, payment.currency)}
+          </p>
+          {isOverdue ? (
+            <Badge className="bg-[#FEE2E2] text-[#B91C1C]">Pago vencido</Badge>
+          ) : null}
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-[#9CA3AF]">ID {payment.id.slice(0, 8).toUpperCase()}</p>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="rounded-full border-[#E8E6E0] text-[#2F4F4F] hover:bg-[#F8F7F4]"
+            onClick={onEdit}
+          >
+            <Pencil className="mr-2 h-4 w-4" />
+            Editar
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="rounded-full border-[#FCA5A5] text-[#B91C1C] hover:bg-[#FEF2F2]"
+            disabled={deleting}
+            onClick={onDelete}
+          >
+            {deleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+            Eliminar
+          </Button>
+        </div>
+      </div>
     </div>
   )
 }

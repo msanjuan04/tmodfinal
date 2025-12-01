@@ -9,7 +9,21 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Textarea } from "@/components/ui/textarea"
-import { ChevronRight, Loader2, Paperclip, Search, Send } from "lucide-react"
+import {
+  ChevronRight,
+  Loader2,
+  Paperclip,
+  Search,
+  Send,
+  Check,
+  CheckCheck,
+  Clock,
+  Image as ImageIcon,
+  FileText,
+  File,
+  Download,
+  Eye,
+} from "lucide-react"
 import { toast } from "sonner"
 
 import type { MessagesData } from "@/lib/supabase/queries"
@@ -191,8 +205,8 @@ export function MessagesView({
                             {conversation.lastMessagePreview ?? "Sin mensajes recientes"}
                           </p>
                           {conversation.unreadCount > 0 && (
-                            <Badge className="h-5 min-w-[20px] rounded-full bg-[#1f3535] px-2 text-xs text-white">
-                              {conversation.unreadCount}
+                            <Badge className="h-6 min-w-[24px] rounded-full bg-[#2F4F4F] px-2.5 text-xs font-bold text-white shadow-apple">
+                              {conversation.unreadCount > 99 ? "99+" : conversation.unreadCount}
                             </Badge>
                           )}
                         </div>
@@ -316,9 +330,9 @@ export function MessagesView({
 
               <CardContent className="p-0">
                 <div className="flex h-[540px] flex-col">
-                  <ScrollArea className="flex-1 bg-[#ece5dd] px-4 py-4">
+                  <ScrollArea className="flex-1 bg-gradient-to-b from-[#ECE5DD] to-[#F5F0E8] px-4 py-6">
                     {messages.length > 0 ? (
-                      <div className="space-y-4">
+                      <div className="space-y-6">
                         {messages.map((message) => {
                           const isOwn =
                             viewerType === "client"
@@ -353,9 +367,17 @@ export function MessagesView({
                     )}
                   </ScrollArea>
                   <div className="border-t border-[#e8e6e0] bg-white/95 px-5 py-4">
-                    <p className="pb-2 text-xs text-[#94a3b8]">
-                      Presiona Enter para enviar o Shift + Enter para salto de línea.
-                    </p>
+                    <div className="mb-2 flex items-center justify-between">
+                      <p className="text-xs text-[#94a3b8]">
+                        Presiona Enter para enviar o Shift + Enter para salto de línea.
+                      </p>
+                      {messageInput.trim().length > 0 && (
+                        <div className="flex items-center gap-1.5 text-xs text-[#6B7280]">
+                          <Clock className="h-3 w-3" />
+                          <span>Escribiendo...</span>
+                        </div>
+                      )}
+                    </div>
                     <div className="flex items-end gap-3">
                       <Textarea
                         placeholder={`Escribe un mensaje para ${otherPartyName}...`}
@@ -424,21 +446,95 @@ function MessageBubble({
   senderName: string
   isOwn: boolean
 }) {
+  // Detectar si el mensaje contiene URLs de imágenes o archivos
+  const imageUrlMatch = content.match(/https?:\/\/[^\s]+\.(jpg|jpeg|png|gif|webp|svg)/i)
+  const fileUrlMatch = content.match(/https?:\/\/[^\s]+\.(pdf|doc|docx|xls|xlsx|zip|rar)/i)
+  const hasAttachment = imageUrlMatch || fileUrlMatch
+
+  // Estado del mensaje (simulado - en producción vendría del backend)
+  const messageStatus: "sending" | "sent" | "delivered" | "read" = "read"
+
   return (
-    <div className={`flex ${isOwn ? "justify-end" : "justify-start"}`}>
-      <div
-        className={`max-w-[75%] rounded-2xl px-4 py-3 text-sm shadow-[0_8px_20px_-15px_rgba(0,0,0,0.6)] ${
-          isOwn ? "rounded-br-md bg-[#d9fdd3] text-[#111b21]" : "rounded-bl-md bg-white text-[#111b21]"
-        }`}
-      >
+    <div className={`flex items-end gap-2 ${isOwn ? "justify-end" : "justify-start"}`}>
+      {!isOwn && (
+        <Avatar className="h-8 w-8 shrink-0 border border-[#E8E6E0]">
+          <AvatarFallback className="bg-[#C6B89E] text-xs text-[#2F4F4F]">
+            {senderName.charAt(0).toUpperCase()}
+          </AvatarFallback>
+        </Avatar>
+      )}
+
+      <div className={`flex max-w-[75%] flex-col gap-1 ${isOwn ? "items-end" : "items-start"}`}>
         {!isOwn && (
-          <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.25em] text-[#25a874]">{senderName}</p>
+          <p className="px-2 text-[11px] font-semibold uppercase tracking-[0.25em] text-[#6B7280]">{senderName}</p>
         )}
-        <p className="whitespace-pre-line leading-relaxed">{content}</p>
-        <div className="mt-1 flex justify-end">
-          <span className={`text-[11px] ${isOwn ? "text-[#667781]" : "text-[#94a3b8]"}`}>{time}</span>
+
+        <div
+          className={`group relative rounded-2xl px-4 py-3 text-sm shadow-apple-md transition-all duration-200 ${
+            isOwn
+              ? "rounded-br-md bg-gradient-to-br from-[#D9FDD3] to-[#C7F9CC] text-[#111b21]"
+              : "rounded-bl-md bg-white text-[#111b21]"
+          }`}
+        >
+          {/* Preview de imagen */}
+          {imageUrlMatch && (
+            <div className="mb-3 overflow-hidden rounded-[1rem] border border-[#E8E6E0]">
+              <img
+                src={imageUrlMatch[0]}
+                alt="Imagen adjunta"
+                className="max-h-64 w-full object-cover"
+                onError={(e) => {
+                  e.currentTarget.style.display = "none"
+                }}
+              />
+            </div>
+          )}
+
+          {/* Preview de archivo */}
+          {fileUrlMatch && !imageUrlMatch && (
+            <div className="mb-3 flex items-center gap-3 rounded-[1rem] border border-[#E8E6E0] bg-[#F8F7F4] p-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#2F4F4F] text-white">
+                <File className="h-5 w-5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="truncate text-xs font-medium text-[#2F4F4F]">Archivo adjunto</p>
+                <p className="text-[10px] text-[#6B7280]">{fileUrlMatch[0].split("/").pop()}</p>
+              </div>
+              <a
+                href={fileUrlMatch[0]}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="rounded-lg p-2 text-[#2F4F4F] transition hover:bg-[#E8E6E0]"
+                title="Descargar archivo"
+              >
+                <Download className="h-4 w-4" />
+              </a>
+            </div>
+          )}
+
+          {/* Contenido del mensaje */}
+          <p className="whitespace-pre-line leading-relaxed">{content.replace(/https?:\/\/[^\s]+/g, "").trim() || content}</p>
+
+          {/* Footer con hora y estado */}
+          <div className={`mt-2 flex items-center gap-1.5 ${isOwn ? "justify-end" : "justify-start"}`}>
+            <span className={`text-[11px] ${isOwn ? "text-[#667781]" : "text-[#94a3b8]"}`}>{time}</span>
+            {isOwn && (
+              <div className="flex items-center">
+                {messageStatus === "sending" && <Clock className="h-3 w-3 text-[#94a3b8]" />}
+                {messageStatus === "sent" && <Check className="h-3.5 w-3.5 text-[#94a3b8]" />}
+                {messageStatus === "delivered" && <CheckCheck className="h-3.5 w-3.5 text-[#94a3b8]" />}
+                {messageStatus === "read" && <CheckCheck className="h-3.5 w-3.5 text-[#25d366]" />}
+              </div>
+            )}
+          </div>
         </div>
       </div>
+
+      {isOwn && (
+        <Avatar className="h-8 w-8 shrink-0 border border-[#E8E6E0]">
+          <AvatarFallback className="bg-[#2F4F4F] text-xs text-white">Tú</AvatarFallback>
+        </Avatar>
+      )}
     </div>
   )
 }

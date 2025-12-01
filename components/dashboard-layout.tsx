@@ -40,10 +40,10 @@ import { NotificationsMenu } from "@/components/notifications/NotificationsMenu"
 const navigation = [
   { name: "Resumen", href: "/dashboard", icon: LayoutDashboard },
   { name: "Calendario", href: "/dashboard/calendar", icon: CalendarDays },
-  { name: "Proyectos", href: "/dashboard/projects", icon: FolderKanban },
   { name: "Clientes", href: "/dashboard/clients", icon: Users },
+  { name: "Proyectos", href: "/dashboard/projects", icon: FolderKanban },
   { name: "Presupuestos", href: "/dashboard/budgets", icon: FileSpreadsheet },
-  { name: "Pagos", href: "/dashboard/payments", icon: CreditCard },
+  { name: "Facturación", href: "/dashboard/payments", icon: CreditCard },
   { name: "Equipo", href: "/dashboard/team", icon: UserCog },
   { name: "Documentos", href: "/dashboard/documents", icon: FileText },
   { name: "Mensajes", href: "/dashboard/messages", icon: MessageSquare },

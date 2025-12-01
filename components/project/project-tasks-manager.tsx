@@ -24,6 +24,9 @@ import {
   Search as SearchIcon,
   Layers,
   Info,
+  X,
+  Edit,
+  PlusCircle,
 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
@@ -87,6 +90,13 @@ const STATUS_BADGES: Record<ProjectTaskStatus, string> = {
 }
 
 const WEIGHT_OPTIONS = [0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4, 5]
+
+const DEFAULT_STANDARD_TASKS = [
+  { id: "1", title: "Revisión inicial" },
+  { id: "2", title: "Preparar documentación" },
+  { id: "3", title: "Contacto con cliente" },
+  { id: "4", title: "Entrega final" },
+]
 
 interface ProjectTasksManagerProps {
   projectId: string
@@ -173,6 +183,38 @@ export function ProjectTasksManager({
   const [activityLoading, setActivityLoading] = useState(false)
   const [progress, setProgress] = useState(initialProgress)
   const tasksRef = useRef<AdminProjectTask[]>([])
+  const [standardTasks, setStandardTasks] = useState(() => {
+    const stored = localStorage.getItem("standardTasks")
+    return stored ? JSON.parse(stored) : DEFAULT_STANDARD_TASKS
+  })
+  const [editingStandardId, setEditingStandardId] = useState<string | null>(null)
+  const [newStandardTitle, setNewStandardTitle] = useState("")
+  const [showNewInput, setShowNewInput] = useState(false)
+
+  // Guardar en localStorage
+  useEffect(() => {
+    localStorage.setItem("standardTasks", JSON.stringify(standardTasks))
+  }, [standardTasks])
+
+  // Añadir plantilla estándar como tarea
+  const handleAddStandard = (item: { id: string, title: string }) => {
+    handleCreateTask({ ...DEFAULT_FORM, title: item.title })
+  }
+  // Editar nombre plantilla
+  const handleEditStandard = (id: string, newTitle: string) => {
+    setStandardTasks((std) => std.map((t) => t.id === id ? { ...t, title: newTitle } : t))
+    setEditingStandardId(null)
+  }
+  // Crear nueva plantilla
+  const handleAddStandardTemplate = () => {
+    if (newStandardTitle.trim().length === 0) return
+    setStandardTasks((std) => [...std, { id: Date.now().toString(), title: newStandardTitle.trim() }])
+    setNewStandardTitle("")
+  }
+  // Borrar plantilla
+  const handleDeleteStandard = (id: string) => {
+    setStandardTasks((std) => std.filter((t) => t.id !== id))
+  }
 
   const combinedAssignees = useMemo(() => {
     const map = new Map<string, string>()
@@ -288,7 +330,7 @@ export function ProjectTasksManager({
         title: form.title,
         description: form.description || undefined,
         status: form.status,
-        weight: form.weight,
+        weight: 1, // Fixed weight
         assigneeId: form.assigneeId || null,
         startDate: form.startDate || null,
         dueDate: form.dueDate || null,
@@ -313,7 +355,7 @@ export function ProjectTasksManager({
         title: patch.title,
         description: patch.description ?? undefined,
         status: patch.status as ProjectTaskStatus | undefined,
-        weight: patch.weight ?? undefined,
+        weight: 1, // Fixed weight
         assigneeId: patch.assigneeId ?? undefined,
         startDate: patch.startDate ?? undefined,
         dueDate: patch.dueDate ?? undefined,
@@ -347,7 +389,7 @@ export function ProjectTasksManager({
         title: `${task.title} (copia)`,
         description: task.description ?? undefined,
         status: task.status as ProjectTaskStatus,
-        weight: task.weight,
+        weight: 1, // Fixed weight
         assigneeId: task.assigneeId,
         startDate: task.startDate,
         dueDate: task.dueDate,
@@ -554,7 +596,6 @@ export function ProjectTasksManager({
                               title: editingTask.title,
                               description: editingTask.description ?? "",
                               status: editingTask.status as ProjectTaskStatus,
-                              weight: editingTask.weight,
                               assigneeId: editingTask.assigneeId ?? "",
                               startDate: editingTask.startDate ?? "",
                               dueDate: editingTask.dueDate ?? "",
@@ -568,7 +609,6 @@ export function ProjectTasksManager({
                             title: values.title,
                             description: values.description,
                             status: values.status,
-                            weight: values.weight,
                             assigneeId: values.assigneeId || null,
                             startDate: values.startDate || null,
                             dueDate: values.dueDate || null,
@@ -625,6 +665,56 @@ export function ProjectTasksManager({
         onBulkStatus={(status) => handleBulkUpdate({ status })}
         onBulkAssignee={(assigneeId) => handleBulkUpdate({ assigneeId })}
       />
+
+      <section className="py-4 pl-6 sm:pl-8">
+        <h4 className="mb-2 text-base font-semibold text-[#23403C]">Tareas estándar rápidas</h4>
+        <div className="flex flex-wrap sm:flex-nowrap sm:overflow-x-auto gap-4 pb-2 pr-8 items-center min-h-[56px]">
+          {standardTasks.map((item) => (
+            editingStandardId === item.id ? (
+              <span key={item.id} className="inline-flex items-center bg-[#F3F4F6] px-3 py-1 rounded-xl shadow border border-[#D1D5DB]">
+                <input
+                  value={item.title}
+                  autoFocus
+                  onChange={e => handleEditStandard(item.id, e.target.value)}
+                  onBlur={() => setEditingStandardId(null)}
+                  className="border-none focus:ring-0 text-sm bg-transparent outline-none px-0.5 max-w-[160px] min-w-[45px]"
+                  maxLength={44}
+                />
+                <button title="Cancelar" onClick={() => setEditingStandardId(null)} className="ml-2 p-0.5 text-gray-400 hover:text-red-400"><X className="h-4 w-4" /></button>
+              </span>
+            ) : (
+              <span key={item.id} className="inline-flex items-center bg-white border border-[#E1E5ED] px-5 py-2 rounded-2xl shadow-sm hover:shadow-md transition cursor-pointer max-w-[160px]">
+                <button className="truncate max-w-[110px] font-medium text-[#23403C] mr-1 text-sm text-left" onClick={() => handleAddStandard(item)} title="Añadir esta tarea">{item.title}</button>
+                <button title="Editar" className="ml-1 text-gray-500 hover:text-blue-500 p-0.5" onClick={() => setEditingStandardId(item.id)}><Edit className="w-4 h-4" /></button>
+                <button title="Borrar" className="ml-1 text-gray-500 hover:text-red-500 p-0.5" onClick={() => handleDeleteStandard(item.id)}><X className="w-4 h-4" /></button>
+              </span>
+            )
+          ))}
+          <div className="ml-4">{/* separador mayor antes del + */}
+            {showNewInput
+              ? <span className="inline-flex items-center bg-white border border-[#E1E5ED] px-3 py-1 rounded-2xl shadow-sm">
+                  <input
+                    placeholder="Nueva tarea..."
+                    className="border-none focus:ring-0 text-sm bg-transparent outline-none px-0.5 min-w-[55px] max-w-[130px]"
+                    value={newStandardTitle}
+                    onChange={e => setNewStandardTitle(e.target.value)}
+                    onBlur={() => { setShowNewInput(false); setNewStandardTitle("") }}
+                    onKeyDown={e => { if(e.key==="Enter") {handleAddStandardTemplate(); setShowNewInput(false);} }}
+                    maxLength={44}
+                  />
+                  <button className="ml-1 text-green-600 hover:text-green-800 p-0.5" title="Añadir" onClick={() => { handleAddStandardTemplate(); setShowNewInput(false); }}><PlusCircle className="w-5 h-5" /></button>
+                </span>
+              : <button
+                  className="flex items-center justify-center bg-[#E8E6E0] hover:bg-[#D4D4D8] text-[#23403C] rounded-full w-9 h-9 shadow border-none text-xl transition"
+                  title="Nueva tarea estándar"
+                  onClick={() => setShowNewInput(true)}
+                >
+                +
+                </button>
+            }
+          </div>
+        </div>
+      </section>
 
       {usesFallbackTasks ? (
         <div className="flex items-start gap-3 rounded-2xl border border-[#FCD34D] bg-[#FFFBEB] p-4 text-sm text-[#92400E]">
@@ -1032,9 +1122,6 @@ function KanbanBoard({
                                   <Badge className={STATUS_BADGES[task.status as ProjectTaskStatus]}>
                                     {STATUS_LABELS[task.status as ProjectTaskStatus]}
                                   </Badge>
-                                  <Badge variant="outline" className="border-[#E8E6E0] text-[#4B5563]">
-                                    Peso {task.weight.toFixed(2)}
-                                  </Badge>
                                   {task.assigneeName ? (
                                     <span className="rounded-full bg-[#E8E6E0] px-2 py-0.5 text-xs text-[#4B5563]">
                                       {task.assigneeName}
@@ -1186,7 +1273,6 @@ function TaskTable({
                 />
               </th>
               <th className="px-3 py-2 text-left">Título</th>
-              <th className="px-3 py-2 text-left">Peso</th>
               <th className="px-3 py-2 text-left">Estado</th>
               <th className="px-3 py-2 text-left">Responsable</th>
               <th className="px-3 py-2 text-left">Fecha límite</th>
@@ -1197,7 +1283,7 @@ function TaskTable({
           <tbody className="divide-y divide-[#F3F4F6] bg-white">
             {tasks.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-4 py-6 text-center text-sm text-[#6B7280]">
+                <td colSpan={7} className="px-4 py-6 text-center text-sm text-[#6B7280]">
                   Crea tu primera tarea para comenzar a gestionar el proyecto.
                 </td>
               </tr>
@@ -1220,15 +1306,6 @@ function TaskTable({
                     >
                       {task.title}
                     </button>
-                  </td>
-                  <td className="px-3 py-3">
-                    <EditableNumber
-                      value={task.weight}
-                      onSubmit={async (value) => {
-                        await onInlineUpdate(task.id, { weight: value })
-                        toast.success("Peso actualizado")
-                      }}
-                    />
                   </td>
                   <td className="px-3 py-3">
                     <select
@@ -1398,10 +1475,6 @@ function TaskForm({ initialValues, onSubmit, onCancel, saving, teamMembers }: Ta
       toast.error("Introduce un título")
       return
     }
-    if (formState.weight < 0.25) {
-      toast.error("El peso mínimo es 0.25")
-      return
-    }
     await onSubmit(formState)
   }
 
@@ -1456,20 +1529,6 @@ function TaskForm({ initialValues, onSubmit, onCancel, saving, teamMembers }: Ta
               {STATUS_COLUMNS.map((column) => (
                 <option key={column.id} value={column.id}>
                   {column.title}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="space-y-2">
-            <label className="text-xs font-semibold text-[#2F4F4F]">Peso</label>
-            <select
-              value={formState.weight}
-              onChange={(event) => handleChange("weight", Number(event.target.value))}
-              className="h-12 w-full rounded-[1rem] border border-[#E8E6E0] bg-[#F8F7F4] px-4 text-sm text-[#2F4F4F] focus:border-[#2F4F4F] focus:ring-[#2F4F4F]/20"
-            >
-              {WEIGHT_OPTIONS.map((weight) => (
-                <option key={weight} value={weight}>
-                  {weight.toFixed(2)}
                 </option>
               ))}
             </select>
@@ -1537,42 +1596,6 @@ function TaskForm({ initialValues, onSubmit, onCancel, saving, teamMembers }: Ta
         </div>
       </div>
     </form>
-  )
-}
-
-function EditableNumber({ value, onSubmit }: { value: number; onSubmit: (value: number) => Promise<void> }) {
-  const [local, setLocal] = useState(value.toFixed(2))
-  useEffect(() => {
-    setLocal(value.toFixed(2))
-  }, [value])
-
-  const commit = async () => {
-    const parsed = Number(local)
-    if (Number.isNaN(parsed) || parsed < 0.25) {
-      setLocal(value.toFixed(2))
-      toast.error("El peso debe ser un número válido (mínimo 0.25)")
-      return
-    }
-    if (Math.abs(parsed - value) < 0.001) return
-    const normalized = Math.round(parsed * 4) / 4
-    await onSubmit(normalized)
-  }
-
-  return (
-    <input
-      type="number"
-      min={0.25}
-      step={0.25}
-      value={local}
-      onChange={(event) => setLocal(event.target.value)}
-      onBlur={commit}
-      onKeyDown={(event) => {
-        if (event.key === "Enter") {
-          event.currentTarget.blur()
-        }
-      }}
-      className="w-20 rounded-md border border-[#E8E6E0] px-2 py-1 text-sm text-[#2F4F4F] focus:outline-none focus:ring-2 focus:ring-[#2F4F4F]/20"
-    />
   )
 }
 

@@ -16,6 +16,17 @@ import {
   RefreshCw,
   Search,
   Trash2,
+  FileText,
+  PlayCircle,
+  CheckCircle2,
+  PauseCircle,
+  Calendar,
+  User,
+  LayoutGrid,
+  List,
+  TrendingUp,
+  Clock,
+  MapPin,
 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
@@ -76,6 +87,17 @@ const STATUS_BADGES: Record<string, string> = {
   completado: "bg-[#C6B89E] text-[#2F4F4F]",
   finalizado: "bg-[#C7F9CC] text-[#166534]",
   archivado: "bg-[#E2E8F0] text-[#475569]",
+}
+
+const STATUS_ICONS: Record<string, typeof FileText> = {
+  borrador: FileText,
+  planificacion: Calendar,
+  en_progreso: PlayCircle,
+  activo: TrendingUp,
+  pausado: PauseCircle,
+  completado: CheckCircle2,
+  finalizado: CheckCircle2,
+  archivado: Archive,
 }
 
 const ROLE_LABELS: Record<string, string> = {
@@ -185,6 +207,8 @@ function getInitialFormFromDetail(detail: AdminProjectDetails): ProjectFormValue
   }
 }
 
+type ViewMode = "list" | "cards"
+
 export function AdminProjectsPage() {
   const navigate = useNavigate()
   const [response, setResponse] = useState<AdminProjectListResponse | null>(null)
@@ -193,6 +217,7 @@ export function AdminProjectsPage() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
   const [searchInput, setSearchInput] = useState("")
+  const [viewMode, setViewMode] = useState<ViewMode>("cards")
   const [filters, setFilters] = useState<FilterState>({
     search: "",
     status: new Set<string>(),
@@ -560,7 +585,29 @@ export function AdminProjectsPage() {
 
       <Card className="border-[#E8E6E0]">
         <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <CardTitle className="text-[#2F4F4F]">Listado de proyectos</CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-[#2F4F4F]">Listado de proyectos</CardTitle>
+            <div className="flex items-center gap-2 md:ml-4">
+              <Button
+                variant={viewMode === "cards" ? "default" : "outline"}
+                size="icon"
+                className={viewMode === "cards" ? "bg-[#2F4F4F] text-white" : "border-[#E8E6E0]"}
+                onClick={() => setViewMode("cards")}
+                title="Vista de tarjetas"
+              >
+                <LayoutGrid className="h-4 w-4" />
+              </Button>
+              <Button
+                variant={viewMode === "list" ? "default" : "outline"}
+                size="icon"
+                className={viewMode === "list" ? "bg-[#2F4F4F] text-white" : "border-[#E8E6E0]"}
+                onClick={() => setViewMode("list")}
+                title="Vista de lista"
+              >
+                <List className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
           <div className="flex flex-wrap items-center gap-2 text-xs text-[#6B7280]">
             <span>{response?.pagination.total ?? 0} proyectos</span>
             <span>•</span>
@@ -568,115 +615,157 @@ export function AdminProjectsPage() {
           </div>
         </CardHeader>
         <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-[#E8E6E0]">
-              <thead className="bg-[#F8F7F4]">
-                <tr className="text-left text-xs uppercase tracking-[0.25em] text-[#9CA3AF]">
-                  <th className="px-4 py-3">Proyecto</th>
-                  <th className="px-4 py-3">Cliente</th>
-                  <th className="px-4 py-3">Estado</th>
-                  <th className="px-4 py-3">Avance</th>
-                  <th className="px-4 py-3">Inicio</th>
-                  <th className="px-4 py-3">Entrega estimada</th>
-                  <th className="px-4 py-3">Gestor</th>
-                  <th className="px-4 py-3 text-right">Acciones</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#F1F5F9] bg-white text-sm">
-                {loading ? (
-                  <tr>
-                    <td colSpan={8} className="py-12 text-center text-[#6B7280]">
-                      <div className="inline-flex items-center gap-2">
-                        <Loader2 className="h-4 w-4 animate-spin" /> Cargando proyectos…
-                      </div>
-                    </td>
+          {viewMode === "cards" ? (
+            <div className="p-6">
+              {loading ? (
+                <div className="flex items-center justify-center py-16 text-[#6B7280]">
+                  <div className="inline-flex items-center gap-2">
+                    <Loader2 className="h-5 w-5 animate-spin" /> Cargando proyectos…
+                  </div>
+                </div>
+              ) : error ? (
+                <div className="py-10 text-center text-sm text-[#B91C1C]">{error}</div>
+              ) : projects.length === 0 ? (
+                <div className="py-12 text-center text-sm text-[#6B7280]">
+                  No hay proyectos. Crea el primero para comenzar.
+                </div>
+              ) : (
+                <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+                  {projects.map((project) => (
+                    <ProjectCard
+                      key={project.id}
+                      project={project}
+                      onEdit={() => handleOpenEdit(project.id)}
+                      onDuplicate={() => handleDuplicate(project.id)}
+                      onArchive={() => handleArchive(project.id)}
+                      onRestore={() => handleRestore(project.id)}
+                      onDelete={() => handleDelete(project.id)}
+                      onNavigate={() => navigate(`/dashboard/projects/${project.slug ?? project.id}`)}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-[#E8E6E0]">
+                <thead className="bg-[#F8F7F4]">
+                  <tr className="text-left text-xs uppercase tracking-[0.25em] text-[#9CA3AF]">
+                    <th className="px-4 py-3">Proyecto</th>
+                    <th className="px-4 py-3">Cliente</th>
+                    <th className="px-4 py-3">Estado</th>
+                    <th className="px-4 py-3">Avance</th>
+                    <th className="px-4 py-3">Inicio</th>
+                    <th className="px-4 py-3">Entrega estimada</th>
+                    <th className="px-4 py-3">Gestor</th>
+                    <th className="px-4 py-3 text-right">Acciones</th>
                   </tr>
-                ) : error ? (
-                  <tr>
-                    <td colSpan={8} className="py-10 text-center text-sm text-[#B91C1C]">
-                      {error}
-                    </td>
-                  </tr>
-                ) : projects.length === 0 ? (
-                  <tr>
-                    <td colSpan={8} className="py-12 text-center text-sm text-[#6B7280]">
-                      No hay proyectos. Crea el primero para comenzar.
-                    </td>
-                  </tr>
-                ) : (
-                  projects.map((project) => {
-                    const progress = Math.round(project.progressPercent)
-                    return (
-                      <tr key={project.id} className="hover:bg-[#F8F7F4]">
-                        <td className="px-4 py-4">
-                          <div className="flex flex-col">
-                            <button
-                              type="button"
-                              onClick={() => navigate(`/dashboard/projects/${project.slug ?? project.id}`)}
-                              className="text-left font-semibold text-[#2F4F4F] hover:underline"
-                            >
-                              {project.name}
-                            </button>
-                            <span className="text-xs text-[#9CA3AF]">{project.code ?? "Sin código"}</span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-4">
-                          <div className="text-sm text-[#4B5563]">{project.clientName ?? "—"}</div>
-                          <div className="text-xs text-[#9CA3AF]">{project.clientEmail ?? ""}</div>
-                        </td>
-                        <td className="px-4 py-4">
-                          <Badge className={STATUS_BADGES[project.status] ?? "bg-[#E8E6E0] text-[#2F4F4F]"}>{statusLabel(project.status)}</Badge>
-                        </td>
-                        <td className="px-4 py-4">
-                          <div className="flex items-center gap-2">
-                            <Progress value={progress} className="h-2 w-28" />
-                            <span className="text-xs text-[#4B5563]">{progress}%</span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-4 text-[#4B5563]">{formatDate(project.startDate)}</td>
-                        <td className="px-4 py-4 text-[#4B5563]">{formatDate(project.estimatedDelivery)}</td>
-                        <td className="px-4 py-4 text-[#4B5563]">{project.managerName ?? "—"}</td>
-                        <td className="px-4 py-4 text-right">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon">
-                                <MoreHorizontal className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuLabel>Acciones</DropdownMenuLabel>
-                              <DropdownMenuItem onSelect={() => handleOpenEdit(project.id)}>
-                                <Pencil className="mr-2 h-4 w-4" /> Editar
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onSelect={() => handleDuplicate(project.id)}>
-                                <Copy className="mr-2 h-4 w-4" /> Duplicar
-                              </DropdownMenuItem>
-                              {project.status === "archivado" ? (
-                                <DropdownMenuItem onSelect={() => handleRestore(project.id)}>
-                                  <ArrowLeftRight className="mr-2 h-4 w-4" /> Restaurar
+                </thead>
+                <tbody className="divide-y divide-[#F1F5F9] bg-white text-sm">
+                  {loading ? (
+                    <tr>
+                      <td colSpan={8} className="py-12 text-center text-[#6B7280]">
+                        <div className="inline-flex items-center gap-2">
+                          <Loader2 className="h-4 w-4 animate-spin" /> Cargando proyectos…
+                        </div>
+                      </td>
+                    </tr>
+                  ) : error ? (
+                    <tr>
+                      <td colSpan={8} className="py-10 text-center text-sm text-[#B91C1C]">
+                        {error}
+                      </td>
+                    </tr>
+                  ) : projects.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="py-12 text-center text-sm text-[#6B7280]">
+                        No hay proyectos. Crea el primero para comenzar.
+                      </td>
+                    </tr>
+                  ) : (
+                    projects.map((project) => {
+                      const progress = Math.round(project.progressPercent)
+                      const StatusIcon = STATUS_ICONS[project.status] ?? FileText
+                      return (
+                        <tr key={project.id} className="hover:bg-[#F8F7F4] transition-colors">
+                          <td className="px-4 py-4">
+                            <div className="flex flex-col">
+                              <button
+                                type="button"
+                                onClick={() => navigate(`/dashboard/projects/${project.slug ?? project.id}`)}
+                                className="text-left font-semibold text-[#2F4F4F] hover:underline"
+                              >
+                                {project.name}
+                              </button>
+                              <span className="text-xs text-[#9CA3AF]">{project.code ?? "Sin código"}</span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-4">
+                            <div className="text-sm text-[#4B5563]">{project.clientName ?? "—"}</div>
+                            <div className="text-xs text-[#9CA3AF]">{project.clientEmail ?? ""}</div>
+                          </td>
+                          <td className="px-4 py-4">
+                            <Badge className={`${STATUS_BADGES[project.status] ?? "bg-[#E8E6E0] text-[#2F4F4F]"} flex items-center gap-1.5 px-3 py-1`}>
+                              <StatusIcon className="h-3.5 w-3.5" />
+                              {statusLabel(project.status)}
+                            </Badge>
+                          </td>
+                          <td className="px-4 py-4">
+                            <div className="flex items-center gap-3">
+                              <div className="relative h-3 w-32 overflow-hidden rounded-full bg-[#E8E6E0]">
+                                <div
+                                  className="h-full rounded-full bg-[#2F4F4F] transition-all duration-300"
+                                  style={{ width: `${progress}%` }}
+                                />
+                              </div>
+                              <span className="text-xs font-semibold text-[#2F4F4F]">{progress}%</span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-4 text-[#4B5563]">{formatDate(project.startDate)}</td>
+                          <td className="px-4 py-4 text-[#4B5563]">{formatDate(project.estimatedDelivery)}</td>
+                          <td className="px-4 py-4 text-[#4B5563]">{project.managerName ?? "—"}</td>
+                          <td className="px-4 py-4 text-right">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon">
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuLabel>Acciones</DropdownMenuLabel>
+                                <DropdownMenuItem onSelect={() => handleOpenEdit(project.id)}>
+                                  <Pencil className="mr-2 h-4 w-4" /> Editar
                                 </DropdownMenuItem>
-                              ) : (
-                                <DropdownMenuItem onSelect={() => handleArchive(project.id)}>
-                                  <Archive className="mr-2 h-4 w-4" /> Archivar
+                                <DropdownMenuItem onSelect={() => handleDuplicate(project.id)}>
+                                  <Copy className="mr-2 h-4 w-4" /> Duplicar
                                 </DropdownMenuItem>
-                              )}
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem onSelect={() => handleDelete(project.id)} className="text-red-600 focus:text-red-600">
-                                <Trash2 className="mr-2 h-4 w-4" /> Eliminar
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </td>
-                      </tr>
-                    )
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
+                                {project.status === "archivado" ? (
+                                  <DropdownMenuItem onSelect={() => handleRestore(project.id)}>
+                                    <ArrowLeftRight className="mr-2 h-4 w-4" /> Restaurar
+                                  </DropdownMenuItem>
+                                ) : (
+                                  <DropdownMenuItem onSelect={() => handleArchive(project.id)}>
+                                    <Archive className="mr-2 h-4 w-4" /> Archivar
+                                  </DropdownMenuItem>
+                                )}
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem onSelect={() => handleDelete(project.id)} className="text-red-600 focus:text-red-600">
+                                  <Trash2 className="mr-2 h-4 w-4" /> Eliminar
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </td>
+                        </tr>
+                      )
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
 
           {projects.length > 0 && (
-            <div className="flex items-center justify-between border-t border-[#E8E6E0] px-4 py-3 text-sm text-[#6B7280]">
+            <div className={`flex items-center justify-between border-t border-[#E8E6E0] px-4 py-3 text-sm text-[#6B7280] ${viewMode === "cards" ? "px-6" : ""}`}>
               <div>
                 Mostrando {response?.pagination.pageSize ?? pageSize} por página · Total {response?.pagination.total ?? projects.length}
               </div>
@@ -720,6 +809,157 @@ export function AdminProjectsPage() {
         onSubmit={handleFormSubmit}
       />
     </div>
+  )
+}
+
+// Componente de Card de Proyecto mejorado
+interface ProjectCardProps {
+  project: AdminProjectListItem
+  onEdit: () => void
+  onDuplicate: () => void
+  onArchive: () => void
+  onRestore: () => void
+  onDelete: () => void
+  onNavigate: () => void
+}
+
+function ProjectCard({
+  project,
+  onEdit,
+  onDuplicate,
+  onArchive,
+  onRestore,
+  onDelete,
+  onNavigate,
+}: ProjectCardProps) {
+  const progress = Math.round(project.progressPercent)
+  const StatusIcon = STATUS_ICONS[project.status] ?? FileText
+  const statusColor = STATUS_BADGES[project.status] ?? "bg-[#E8E6E0] text-[#2F4F4F]"
+
+  return (
+    <Card className="group relative overflow-hidden rounded-[1.75rem] border border-[#E8E6E0] bg-white/95 shadow-apple-md transition-all duration-300 hover:border-[#2F4F4F]/50 hover:shadow-apple-xl">
+      <CardContent className="p-6">
+        {/* Header con código y estado */}
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div className="flex-1 min-w-0">
+            <button
+              type="button"
+              onClick={onNavigate}
+              className="text-left font-heading text-lg font-semibold text-[#2F4F4F] transition hover:text-[#1F3535] hover:underline"
+            >
+              {project.name}
+            </button>
+            <div className="mt-1 flex items-center gap-2 text-xs text-[#6B7280]">
+              <span className="font-mono font-medium">{project.code ?? "Sin código"}</span>
+            </div>
+          </div>
+          <Badge className={`${statusColor} flex shrink-0 items-center gap-1.5 px-3 py-1.5 text-xs font-semibold`}>
+            <StatusIcon className="h-3.5 w-3.5" />
+            {statusLabel(project.status)}
+          </Badge>
+        </div>
+
+        {/* Barra de progreso prominente */}
+        <div className="mb-6 space-y-2">
+          <div className="flex items-center justify-between text-xs">
+            <span className="font-medium text-[#6B7280]">Progreso del proyecto</span>
+            <span className="font-bold text-[#2F4F4F]">{progress}%</span>
+          </div>
+          <div className="relative h-4 w-full overflow-hidden rounded-full bg-[#E8E6E0] shadow-inner">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-[#2F4F4F] to-[#4A6B6B] transition-all duration-500"
+              style={{ width: `${progress}%` }}
+            />
+            {progress > 0 && (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className="text-[10px] font-bold text-white mix-blend-difference">{progress}%</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Información del cliente */}
+        {project.clientName && (
+          <div className="mb-4 flex items-center gap-2 rounded-[1rem] border border-[#E8E6E0] bg-[#F8F7F4] px-3 py-2">
+            <User className="h-4 w-4 text-[#6B7280]" />
+            <div className="flex-1 min-w-0">
+              <p className="truncate text-sm font-medium text-[#2F4F4F]">{project.clientName}</p>
+              {project.clientEmail && (
+                <p className="truncate text-xs text-[#6B7280]">{project.clientEmail}</p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Fechas */}
+        <div className="mb-4 grid grid-cols-2 gap-3">
+          <div className="rounded-[1rem] border border-[#E8E6E0] bg-[#F8F7F4] p-3">
+            <div className="flex items-center gap-1.5 text-xs text-[#6B7280]">
+              <Calendar className="h-3.5 w-3.5" />
+              <span>Inicio</span>
+            </div>
+            <p className="mt-1 text-sm font-semibold text-[#2F4F4F]">{formatDate(project.startDate)}</p>
+          </div>
+          <div className="rounded-[1rem] border border-[#E8E6E0] bg-[#F8F7F4] p-3">
+            <div className="flex items-center gap-1.5 text-xs text-[#6B7280]">
+              <Clock className="h-3.5 w-3.5" />
+              <span>Entrega</span>
+            </div>
+            <p className="mt-1 text-sm font-semibold text-[#2F4F4F]">{formatDate(project.estimatedDelivery)}</p>
+          </div>
+        </div>
+
+        {/* Gestor */}
+        {project.managerName && (
+          <div className="mb-4 flex items-center gap-2 text-xs text-[#6B7280]">
+            <User className="h-3.5 w-3.5" />
+            <span>Gestor: </span>
+            <span className="font-medium text-[#2F4F4F]">{project.managerName}</span>
+          </div>
+        )}
+
+        {/* Acciones */}
+        <div className="flex items-center justify-between border-t border-[#E8E6E0] pt-4">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onNavigate}
+            className="text-xs text-[#2F4F4F] hover:bg-[#F8F7F4]"
+          >
+            Ver detalles →
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-8 w-8">
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuLabel>Acciones</DropdownMenuLabel>
+              <DropdownMenuItem onSelect={onEdit}>
+                <Pencil className="mr-2 h-4 w-4" /> Editar
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={onDuplicate}>
+                <Copy className="mr-2 h-4 w-4" /> Duplicar
+              </DropdownMenuItem>
+              {project.status === "archivado" ? (
+                <DropdownMenuItem onSelect={onRestore}>
+                  <ArrowLeftRight className="mr-2 h-4 w-4" /> Restaurar
+                </DropdownMenuItem>
+              ) : (
+                <DropdownMenuItem onSelect={onArchive}>
+                  <Archive className="mr-2 h-4 w-4" /> Archivar
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={onDelete} className="text-red-600 focus:text-red-600">
+                <Trash2 className="mr-2 h-4 w-4" /> Eliminar
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </CardContent>
+    </Card>
   )
 }
 

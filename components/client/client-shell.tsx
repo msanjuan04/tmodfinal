@@ -12,6 +12,8 @@ import {
   MessageSquare,
   PanelsTopLeft,
   User,
+  FileSpreadsheet,
+  UserCog,
 } from "lucide-react"
 
 import { logout } from "@app/lib/api/auth"
@@ -29,13 +31,15 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { label: "Dashboard", href: "/client/dashboard", icon: LayoutDashboard },
-  { label: "Mis Proyectos", href: "/client/projects", icon: PanelsTopLeft },
+  { label: "Resumen", href: "/client/dashboard", icon: LayoutDashboard },
   { label: "Calendario", href: "/client/calendar", icon: CalendarDays },
+  { label: "Clientes", href: "/client/clients", icon: User },
+  { label: "Proyectos", href: "/client/projects", icon: PanelsTopLeft },
+  { label: "Presupuestos", href: "/client/budgets", icon: FileSpreadsheet },
+  { label: "Facturación", href: "/client/payments", icon: CreditCard },
+  { label: "Equipo", href: "/client/team", icon: UserCog },
   { label: "Documentos", href: "/client/documents", icon: FileText },
   { label: "Mensajes", href: "/client/messages", icon: MessageSquare },
-  { label: "Pagos", href: "/client/payments", icon: CreditCard },
-  { label: "Perfil", href: "/client/profile", icon: User },
 ]
 
 interface ClientShellProps {

@@ -10,7 +10,7 @@ export function LandingPage() {
           <img src={TERRAZEA_BRAND_ICON_URL} alt="Terrazea" className="h-10 w-10" />
           <div>
             <p className="font-heading text-xl font-semibold tracking-wide">Terrazea</p>
-            <p className="text-xs uppercase tracking-[0.35em] text-[#C6B89E]">Diseño exterior & Liquid Glass</p>
+            <p className="text-xs uppercase tracking-[0.35em] text-[#C6B89E]">Diseño exterior</p>
           </div>
         </Link>
       </header>

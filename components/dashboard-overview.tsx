@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Progress } from "@/components/ui/progress"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
-  AlertCircle,en 
+  AlertCircle,
   ArrowRight,
   Calendar,
   CheckCircle2,

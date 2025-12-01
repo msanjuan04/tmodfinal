@@ -35,10 +35,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       return
     }
 
-    const prefersDark = window.matchMedia?.("(prefers-color-scheme: dark)").matches
-    const initial: Theme = prefersDark ? "dark" : "light"
-    setThemeState(initial)
-    applyThemeClass(initial)
+    setThemeState("light")
+    applyThemeClass("light")
   }, [])
 
   const setTheme = (next: Theme) => {

@@ -360,13 +360,13 @@ export function AdminBudgetsPage() {
   const addBudgetSubLine = (parentId: string) => {
     const parent = budgetLines.find((line) => line.id === parentId)
     const id = safeId()
-    const baseName = parent?.name ? `${parent.name} · detalle` : "Sublínea"
+    const baseName = ""
     const newLine: BudgetLine = {
       id,
       parentId,
       productId: parent?.productId,
       name: baseName,
-      price: parent?.price ?? "",
+      price: "",
       quantity: 1,
       imageDataUrl: parent?.imageDataUrl,
       notes: "",
@@ -384,11 +384,10 @@ export function AdminBudgetsPage() {
       next.splice(insertIndex, 0, newLine)
       return next
     })
-    setExpandedLineId(id)
+    setExpandedLineId(parentId)
   }
 
   const updateBudgetLine = (lineId: string, patch: Partial<BudgetLine>) => {
-    setExpandedLineId(lineId)
     setBudgetLines((prev) => prev.map((line) => (line.id === lineId ? { ...line, ...patch } : line)))
   }
 
@@ -582,8 +581,118 @@ export function AdminBudgetsPage() {
   }, [products, catalogSearch, catalogTagFilter, catalogPriceMin, catalogPriceMax])
 
   const handlePrintPreview = () => {
-    if (typeof window !== "undefined") {
+    if (typeof window === "undefined") return
+
+    const previewElement = document.getElementById("budget-preview")
+    if (!previewElement) {
       window.print()
+      return
+    }
+
+    const inlineStyles = `
+      @page {
+        size: auto;
+        margin: 16mm;
+      }
+
+      html,
+      body {
+        width: 100%;
+        min-height: 100%;
+        margin: 0;
+        padding: 0;
+        background: #f6f4f1;
+      }
+
+      body {
+        font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        color: #111827;
+        display: flex;
+        justify-content: center;
+        align-items: flex-start;
+      }
+
+      .budget-wrapper {
+        width: 100%;
+        padding: 6mm 0 12mm;
+        display: flex;
+        justify-content: center;
+      }
+
+      #budget-preview {
+        width: min(840px, 100%);
+        max-width: 100%;
+        margin: 0 auto;
+      }
+
+      table {
+        border-collapse: collapse;
+        width: 100%;
+      }
+
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+    `
+
+    const headStyles = Array.from(document.head.querySelectorAll("style, link[rel='stylesheet']"))
+      .map((node) => node.outerHTML)
+      .join("\n")
+
+    const previewHtml = previewElement.outerHTML
+
+    const printWindow = window.open("", "_blank", "width=960,height=1200")
+    if (!printWindow) {
+      window.print()
+      return
+    }
+
+    printWindow.document.open()
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <title>Presupuesto Terrazea</title>
+          ${headStyles}
+          <style>${inlineStyles}</style>
+        </head>
+        <body>
+          <div class="budget-wrapper">
+            ${previewHtml}
+          </div>
+        </body>
+      </html>
+    `)
+    printWindow.document.close()
+
+    const triggerPrint = () => {
+      const cleanup = () => {
+        try {
+          if (!printWindow.closed) {
+            printWindow.close()
+          }
+        } catch {
+          // Ignored: window might already be closed or blocked by the browser
+        }
+      }
+
+      const handleAfterPrint = (_event: Event) => {
+        cleanup()
+        printWindow.removeEventListener("afterprint", handleAfterPrint)
+      }
+
+      printWindow.addEventListener("afterprint", handleAfterPrint)
+      printWindow.focus()
+      printWindow.print()
+    }
+
+    if (printWindow.document.readyState === "complete") {
+      triggerPrint()
+    } else {
+      printWindow.onload = triggerPrint
     }
   }
 
@@ -851,7 +960,7 @@ export function AdminBudgetsPage() {
                               {childLines.map((child) => (
                                 <div
                                   key={child.id}
-                                  className="ml-4 space-y-2 rounded-[0.9rem] border border-[#E5E7EB] bg-white px-3 py-2"
+                                  className="ml-6 space-y-2 rounded-[0.9rem] border border-[#E5E7EB] bg-white px-3 py-2 md:ml-8"
                                 >
                                   <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                                     <div className="flex-1 space-y-1">
@@ -1719,14 +1828,23 @@ function BudgetPreviewDocument({ form, lines, total, client }: BudgetPreviewProp
             <tbody>
               {hasLines ? (
                 lines.map((line) => {
+                  const isChild = Boolean(line.parentId)
                   const qty = Math.max(1, Number(line.quantity) || 1)
                   const unit = Number(line.price.toString().replace(",", ".")) || 0
                   const lineTotal = unit * qty
                   return (
                     <tr key={line.id} className="align-top">
-                      <td className="border-b border-[#E5E7EB] px-2 py-2">
-                        <p className="font-medium text-[#111827]">{line.name || "Línia sense nom"}</p>
-                        {line.notes ? <p className="mt-1 whitespace-pre-line text-[10px] text-[#4B5563]">{line.notes}</p> : null}
+                      <td
+                        className={`border-b border-[#E5E7EB] py-2 ${
+                          isChild ? "pl-6 pr-2 lg:pl-8" : "px-2"
+                        }`}
+                      >
+                        <p className="text-[#111827] text-sm font-normal">
+                          {line.name || "Línia sense nom"}
+                        </p>
+                        {line.notes ? (
+                          <p className="mt-1 whitespace-pre-line text-[10px] text-[#4B5563]">{line.notes}</p>
+                        ) : null}
                       </td>
                       <td className="border-b border-[#E5E7EB] px-2 py-2 text-right text-[#111827]">{qty}</td>
                       <td className="border-b border-[#E5E7EB] px-2 py-2 text-right text-[#111827]">
