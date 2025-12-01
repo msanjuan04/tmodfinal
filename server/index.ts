@@ -13,44 +13,11 @@ import { webhooksRouter } from "./routes/webhooks"
 const app = express()
 const MAX_PAYLOAD_SIZE = "150mb"
 
-const allowedOrigins = new Set([env.clientAppOrigin])
-
-if (env.nodeEnv !== "production") {
-  // Puertos típicos de Vite en desarrollo
-  allowedOrigins.add("http://localhost:5173")
-  allowedOrigins.add("http://127.0.0.1:5173")
-  allowedOrigins.add("http://localhost:4173")
-  allowedOrigins.add("http://127.0.0.1:4173")
-}
-
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      // Permitir peticiones sin origen (por ejemplo, cURL, Postman, etc.)
-      if (!origin) {
-        callback(null, true)
-        return
-      }
-
-      // Orígenes explícitamente permitidos
-      if (allowedOrigins.has(origin)) {
-        callback(null, true)
-        return
-      }
-
-      // En desarrollo, permitir cualquier localhost/127.0.0.1 en cualquier puerto
-      if (
-        env.nodeEnv !== "production" &&
-        (origin.startsWith("http://localhost:") || origin.startsWith("http://127.0.0.1:"))
-      ) {
-        callback(null, true)
-        return
-      }
-      callback(new Error(`Origin "${origin}" not allowed by CORS`))
-    },
-    credentials: true,
-  }),
-)
+// CORS solo para las rutas de API; permitimos cualquier origen (reflejado) para evitar 500 por despliegues con dominio distinto
+const corsMiddleware = cors({
+  origin: true,
+  credentials: true,
+})
 app.use(cookieParser())
 app.use(morgan(env.nodeEnv === "production" ? "combined" : "dev"))
 
@@ -61,6 +28,7 @@ app.use("/api/webhooks", express.raw({ type: "application/json" }), webhooksRout
 app.use(express.json({ limit: MAX_PAYLOAD_SIZE }))
 app.use(express.urlencoded({ limit: MAX_PAYLOAD_SIZE, extended: true }))
 
+app.use("/api", corsMiddleware)
 app.use("/api/auth", authRouter)
 app.use("/api/client", clientRouter)
 app.use("/api/admin", adminRouter)
