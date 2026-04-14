@@ -143,20 +143,70 @@ create index client_notes_client_id_idx on public.client_notes(client_id, create
 
 create table public.budgets (
   id uuid primary key default uuid_generate_v4(),
-  title text not null,
+  title text,
   client_id uuid references public.clients(id) on delete set null,
   client_type text not null default 'existing' check (client_type in ('existing', 'new')),
-  client_name text not null,
+  client_name text,
   client_email text,
-  items jsonb not null,
+  items jsonb,
   notes text,
+  issue_date date,
+  status text default 'draft' check (status in ('draft', 'sent', 'approved', 'rejected', 'archived')),
+  currency text default 'EUR',
+  subtotal numeric(12,2) default 0,
+  tax numeric(12,2) default 0,
   total numeric(12,2) not null default 0,
-  tax_rate numeric(5,2) not null default 21,
+  tax_rate numeric(5,2) default 21,
+  message text,
   created_by uuid references public.app_users(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 create index budgets_created_at_idx on public.budgets(created_at desc);
+
+-- Catálogo maestro de productos/servicios reutilizables en presupuestos
+create table public.budget_products (
+  id uuid primary key default uuid_generate_v4(),
+  name text not null,
+  description text,
+  unit_price numeric(12,2) not null default 0,
+  image_path text,
+  tags text[] not null default '{}',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index budget_products_created_at_idx on public.budget_products(created_at desc);
+
+-- Líneas (items) de cada presupuesto
+create table public.budget_items (
+  id uuid primary key default uuid_generate_v4(),
+  budget_id uuid not null references public.budgets(id) on delete cascade,
+  product_id uuid references public.budget_products(id) on delete set null,
+  product_name text not null,
+  unit_price numeric(12,2) not null default 0,
+  quantity numeric(12,3) not null default 1,
+  discount numeric(12,2) not null default 0,
+  notes text,
+  sort_order integer not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index budget_items_budget_id_idx on public.budget_items(budget_id, sort_order);
+
+-- Eventos privados del admin (calendario personal, no visibles al cliente)
+create table public.personal_events (
+  id uuid primary key default uuid_generate_v4(),
+  user_id uuid not null references public.app_users(id) on delete cascade,
+  title text not null,
+  description text,
+  event_type text not null default 'personal',
+  starts_at timestamptz not null,
+  ends_at timestamptz,
+  is_all_day boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index personal_events_user_idx on public.personal_events(user_id, starts_at);
 
 create or replace function public.verify_password(password_input text, password_hash text)
 returns boolean
@@ -204,6 +254,7 @@ create table public.projects (
   estimated_delivery date,
   location_city text,
   location_notes text,
+  map_url text,
   total_days integer,
   remaining_days integer,
   hero_image_url text,
