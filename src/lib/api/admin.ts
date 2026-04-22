@@ -47,6 +47,9 @@ export interface CreateAdminProjectPayload {
   estimatedDelivery?: string | null
   locationCity?: string | null
   locationNotes?: string | null
+  // URL de Google Maps (u otra) para pintar el pin del proyecto en el mapa del
+  // overview. El backend lo guarda como map_url.
+  locationMapUrl?: string | null
   clientId?: string
   createNewClient?: boolean
   newClientFullName?: string

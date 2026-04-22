@@ -113,11 +113,14 @@ create index clients_status_idx on public.clients(status);
 create index clients_created_at_idx on public.clients(created_at desc);
 create index clients_stripe_customer_idx on public.clients(stripe_customer_id);
 
--- Tabla de usuarios de la aplicación con autenticación
+-- Tabla de usuarios de la aplicación con autenticación.
+-- password_hash admite NULL: las cuentas creadas por el admin nacen sin
+-- contraseña y el propio cliente la define al activar su acceso con el
+-- código Terrazea (así los admins nunca llegan a conocer la clave).
 create table public.app_users (
   id uuid primary key default uuid_generate_v4(),
   email text not null unique,
-  password_hash text not null,
+  password_hash text,
   full_name text not null,
   role text not null default 'client' check (role in ('admin', 'client')),
   must_update_password boolean not null default false,
@@ -125,6 +128,21 @@ create table public.app_users (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+-- Tokens de restablecimiento de contraseña.
+-- Guardamos sólo el hash SHA-256 del token: el valor crudo viaja por correo y
+-- nunca se persiste. Los tokens son de un solo uso (used_at) y caducan pronto
+-- (expires_at, típicamente 30 minutos después de emitirlos).
+create table public.password_reset_tokens (
+  id uuid primary key default uuid_generate_v4(),
+  user_id uuid not null references public.app_users(id) on delete cascade,
+  token_hash text not null unique,
+  expires_at timestamptz not null,
+  used_at timestamptz,
+  created_at timestamptz not null default now()
+);
+create index password_reset_tokens_user_id_idx on public.password_reset_tokens(user_id);
+create index password_reset_tokens_expires_at_idx on public.password_reset_tokens(expires_at);
 
 create table public.client_notes (
   id uuid primary key default uuid_generate_v4(),
@@ -198,7 +216,9 @@ create table public.projects (
   slug text not null unique,
   name text not null,
   code text,
-  status text not null default 'en_progreso',
+  -- Fases canónicas: inicial → diseno → presupuesto → planificacion → obra_ejecucion → cierre.
+  -- También se aceptan los estados administrativos 'archivado' y 'cancelado'.
+  status text not null default 'inicial',
   progress_percent numeric(5,2) not null default 0,
   start_date date,
   estimated_delivery date,
@@ -718,7 +738,7 @@ on conflict do nothing;
 
 insert into public.client_activity (client_id, event_type, title, description, related_project_id, metadata)
 values
-  ('4c0a5c7d-3b6c-4dcb-ab62-81af21d8ab8c', 'project_created', 'Proyecto Terraza Mediterránea Premium', 'Se creó el proyecto principal para Juan Pérez.', 'dd0518f1-52c3-4f6c-9f7f-71fc9c94b9a7', jsonb_build_object('status', 'en_progreso')),
+  ('4c0a5c7d-3b6c-4dcb-ab62-81af21d8ab8c', 'project_created', 'Proyecto Terraza Mediterránea Premium', 'Se creó el proyecto principal para Juan Pérez.', 'dd0518f1-52c3-4f6c-9f7f-71fc9c94b9a7', jsonb_build_object('status', 'obra_ejecucion')),
   ((select id from public.clients where email = 'maria.garcia@example.com'), 'message', 'Mensaje enviado', 'Se envió propuesta inicial al cliente.', null, jsonb_build_object('channel', 'email'))
 on conflict do nothing;
 
@@ -749,7 +769,7 @@ values (
   'terraza-mediterranea-premium',
   'Terraza Mediterránea Premium',
   'TRZ-2024-089',
-  'en_progreso',
+  'obra_ejecucion',
   68,
   '2024-01-15',
   '2024-03-30',

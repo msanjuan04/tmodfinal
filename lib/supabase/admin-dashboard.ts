@@ -51,6 +51,13 @@ export interface AdminDashboardProjectProgress {
   status: string
 }
 
+export interface AdminDashboardProjectLocation {
+  id: string
+  name: string
+  city: string | null
+  mapUrl: string | null
+}
+
 export interface AdminDashboardManager {
   id: string
   name: string
@@ -61,6 +68,8 @@ export interface AdminDashboardData {
   upcomingMilestones: AdminDashboardMilestone[]
   alerts: AdminDashboardAlert[]
   projectsProgress: AdminDashboardProjectProgress[]
+  // Proyectos con datos de localización para pintar en el mapa del overview.
+  projectLocations: AdminDashboardProjectLocation[]
   filters: {
     statuses: string[]
     managers: AdminDashboardManager[]
@@ -123,9 +132,13 @@ export async function getAdminDashboardData(filters: AdminDashboardFilters): Pro
   })
 
   const totalProjects = filteredProjects.length
-  const activeProjects = filteredProjects.filter((project) => project.status === "en_progreso").length
-  const completedProjects = filteredProjects.filter((project) => project.status === "finalizado").length
-  const pendingProjects = filteredProjects.filter((project) => project.status !== "en_progreso" && project.status !== "finalizado").length
+  // KPI: "activo" = la fase de ejecución de obra (fase 5 del flujo canónico).
+  // "completed" = fase de cierre. El resto son estados previos o administrativos.
+  const activeProjects = filteredProjects.filter((project) => project.status === "obra_ejecucion").length
+  const completedProjects = filteredProjects.filter((project) => project.status === "cierre").length
+  const pendingProjects = filteredProjects.filter(
+    (project) => project.status !== "obra_ejecucion" && project.status !== "cierre",
+  ).length
 
   const averageProgress =
     filteredProjects.reduce((acc, project) => acc + Number(project.progress_percent ?? 0), 0) /
@@ -181,7 +194,7 @@ export async function getAdminDashboardData(filters: AdminDashboardFilters): Pro
     .filter((project) => {
       if (!project.estimated_delivery) return false
       const deliveryDate = new Date(project.estimated_delivery)
-      return deliveryDate < today && project.status !== "finalizado"
+      return deliveryDate < today && project.status !== "cierre"
     })
     .map((project) => ({
       id: project.id,

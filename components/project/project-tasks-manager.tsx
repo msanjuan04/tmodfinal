@@ -183,7 +183,7 @@ export function ProjectTasksManager({
   const [activityLoading, setActivityLoading] = useState(false)
   const [progress, setProgress] = useState(initialProgress)
   const tasksRef = useRef<AdminProjectTask[]>([])
-  const [standardTasks, setStandardTasks] = useState(() => {
+  const [standardTasks, setStandardTasks] = useState<Array<{ id: string; title: string }>>(() => {
     const stored = localStorage.getItem("standardTasks")
     return stored ? JSON.parse(stored) : DEFAULT_STANDARD_TASKS
   })
@@ -596,6 +596,7 @@ export function ProjectTasksManager({
                               title: editingTask.title,
                               description: editingTask.description ?? "",
                               status: editingTask.status as ProjectTaskStatus,
+                              weight: editingTask.weight ?? 1,
                               assigneeId: editingTask.assigneeId ?? "",
                               startDate: editingTask.startDate ?? "",
                               dueDate: editingTask.dueDate ?? "",

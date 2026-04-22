@@ -86,7 +86,7 @@ export async function listAdminTeamMembers(filters: AdminTeamListFilters = {}): 
           id: project.id,
           name: project.name,
           code: project.code ?? null,
-          status: project.status ?? "en_progreso",
+          status: project.status ?? "inicial",
           progressPercent: Number(project.progress_percent ?? 0),
           clientName: clientInfo?.full_name ?? null,
           estimatedDelivery: project.estimated_delivery ?? null,

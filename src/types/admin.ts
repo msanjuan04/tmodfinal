@@ -1,14 +1,17 @@
 
 import type { ProjectTaskStatus } from "@/types/project-tasks"
 
+// Flujo canónico de estados de un proyecto Terrazea (de izquierda a derecha).
+// `archivado` y `cancelado` son estados administrativos fuera del flujo, solo
+// los usa el admin para archivar/cancelar un proyecto; no forman parte de la
+// progresión natural y la UI los puede ocultar o mostrar aparte.
 export type AdminProjectStatus =
-  | "borrador"
+  | "inicial"
+  | "diseno"
+  | "presupuesto"
   | "planificacion"
-  | "activo"
-  | "en_progreso"
-  | "pausado"
-  | "finalizado"
-  | "completado"
+  | "obra_ejecucion"
+  | "cierre"
   | "archivado"
   | "cancelado"
 
@@ -220,38 +223,6 @@ export interface AdminDashboardProjectLocation {
 export interface AdminDashboardManager {
   id: string
   name: string
-}
-
-export interface AdminPaymentRecord {
-  id: string
-  projectId: string
-  projectName: string | null
-  projectSlug: string | null
-  clientId: string
-  clientName: string | null
-  concept: string
-  description: string | null
-  status: "draft" | "pending" | "paid" | "failed" | "canceled"
-  amountCents: number
-  currency: string
-  dueDate: string | null
-  paymentLink: string | null
-  stripePaymentIntentId: string | null
-  stripeCheckoutSessionId: string | null
-  stripeCustomerId: string | null
-  stripeInvoiceId: string | null
-  createdBy: string | null
-  sentAt: string | null
-  paidAt: string | null
-  createdAt: string
-  updatedAt: string
-  metadata: Record<string, unknown>
-  clientEmail: string | null
-  clientStripeCustomerId: string | null
-  proposalDocumentId: string | null
-  proposalDocumentName: string | null
-  proposalDocumentUrl: string | null
-  budgetId?: string | null
 }
 
 export interface AdminDashboardData {
@@ -515,7 +486,9 @@ export type PaymentStatus = "draft" | "pending" | "paid" | "failed" | "canceled"
 export interface AdminPaymentRecord {
   id: string
   projectId: string
-  projectName: string
+  // projectName puede llegar null cuando el proyecto aún no se resolvió al
+  // construir la respuesta; los renderers ya usan ?? "…" al pintarlo.
+  projectName: string | null
   projectSlug: string | null
   clientId: string
   clientName: string | null
@@ -530,17 +503,18 @@ export interface AdminPaymentRecord {
   stripePaymentIntentId: string | null
   stripeCheckoutSessionId: string | null
   stripeCustomerId: string | null
-  clientStripeCustomerId?: string | null
+  clientStripeCustomerId: string | null
   stripeInvoiceId: string | null
   createdBy: string | null
   sentAt: string | null
   paidAt: string | null
   createdAt: string
   updatedAt: string
-  metadata?: Record<string, unknown>
+  metadata: Record<string, unknown>
   proposalDocumentId: string | null
   proposalDocumentName: string | null
   proposalDocumentUrl: string | null
+  budgetId?: string | null
 }
 
 export interface AdminPaymentsSummary {

@@ -386,10 +386,18 @@ function getAvatarColor(name: string): string {
 
 // Componente de card de cliente mejorado
 function ClientCard({ client }: { client: AdminClientOverview }) {
+  // "Activos" = todas las fases del flujo canónico antes del cierre.
+  // "Completados" = en cierre. Los administrativos (archivado/cancelado) no
+  // cuentan en ninguno de los dos.
   const activeProjects = (client.projects ?? []).filter(
-    (p) => p.status === "activo" || p.status === "en_progreso" || p.status === "planificacion",
+    (p) =>
+      p.status === "inicial" ||
+      p.status === "diseno" ||
+      p.status === "presupuesto" ||
+      p.status === "planificacion" ||
+      p.status === "obra_ejecucion",
   )
-  const completedProjects = (client.projects ?? []).filter((p) => p.status === "completado" || p.status === "finalizado")
+  const completedProjects = (client.projects ?? []).filter((p) => p.status === "cierre")
   const averageProgress =
     (client.projects ?? []).length > 0
       ? Math.round((client.projects ?? []).reduce((acc, p) => acc + (p.progressPercent ?? 0), 0) / (client.projects ?? []).length)

@@ -69,7 +69,7 @@ export async function getAdminClientsOverview(): Promise<AdminClientOverview[]> 
         name: project.name,
         slug: project.slug,
         code: project.code,
-        status: project.status ?? "en_progreso",
+        status: project.status ?? "inicial",
         progressPercent: Number(project.progress_percent ?? 0),
         startDate: project.start_date,
         estimatedDelivery: project.estimated_delivery,

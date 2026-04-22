@@ -67,37 +67,38 @@ import {
   updateAdminProject,
 } from "@app/lib/api/admin"
 
+// Flujo canónico de 6 fases + 2 estados administrativos al final.
 const PROJECT_STATUS_OPTIONS: Array<{ value: string; label: string }> = [
-  { value: "borrador", label: "Borrador" },
+  { value: "inicial", label: "Inicial" },
+  { value: "diseno", label: "Diseño" },
+  { value: "presupuesto", label: "Presupuesto" },
   { value: "planificacion", label: "Planificación" },
-  { value: "en_progreso", label: "En progreso" },
-  { value: "activo", label: "Activo" },
-  { value: "pausado", label: "En pausa" },
-  { value: "completado", label: "Completado" },
-  { value: "finalizado", label: "Finalizado" },
+  { value: "obra_ejecucion", label: "Ejecución de obra" },
+  { value: "cierre", label: "Cierre" },
   { value: "archivado", label: "Archivado" },
+  { value: "cancelado", label: "Cancelado" },
 ]
 
 const STATUS_BADGES: Record<string, string> = {
-  borrador: "bg-[#E8E6E0] text-[#4B5563]",
+  inicial: "bg-[#E8E6E0] text-[#4B5563]",
+  diseno: "bg-[#EDE9FE] text-[#6D28D9]",
+  presupuesto: "bg-[#FEF3C7] text-[#B45309]",
   planificacion: "bg-[#F1F5F9] text-[#1E293B]",
-  en_progreso: "bg-[#DBEAFE] text-[#1D4ED8]",
-  activo: "bg-[#DCFCE7] text-[#047857]",
-  pausado: "bg-[#FEF3C7] text-[#B45309]",
-  completado: "bg-[#C6B89E] text-[#2F4F4F]",
-  finalizado: "bg-[#C7F9CC] text-[#166534]",
+  obra_ejecucion: "bg-[#DBEAFE] text-[#1D4ED8]",
+  cierre: "bg-[#C7F9CC] text-[#166534]",
   archivado: "bg-[#E2E8F0] text-[#475569]",
+  cancelado: "bg-[#FEE2E2] text-[#B91C1C]",
 }
 
 const STATUS_ICONS: Record<string, typeof FileText> = {
-  borrador: FileText,
+  inicial: FileText,
+  diseno: TrendingUp,
+  presupuesto: PauseCircle,
   planificacion: Calendar,
-  en_progreso: PlayCircle,
-  activo: TrendingUp,
-  pausado: PauseCircle,
-  completado: CheckCircle2,
-  finalizado: CheckCircle2,
+  obra_ejecucion: PlayCircle,
+  cierre: CheckCircle2,
   archivado: Archive,
+  cancelado: Archive,
 }
 
 const ROLE_LABELS: Record<string, string> = {

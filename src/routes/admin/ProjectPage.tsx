@@ -78,14 +78,14 @@ const STATUS_LABELS: Record<string, string> = {
 }
 
 const PROJECT_STATUS_OPTIONS: Array<{ value: string; label: string }> = [
-  { value: "borrador", label: "Borrador" },
+  { value: "inicial", label: "Inicial" },
+  { value: "diseno", label: "Diseño" },
+  { value: "presupuesto", label: "Presupuesto" },
   { value: "planificacion", label: "Planificación" },
-  { value: "en_progreso", label: "En progreso" },
-  { value: "activo", label: "Activo" },
-  { value: "pausado", label: "En pausa" },
-  { value: "completado", label: "Completado" },
-  { value: "finalizado", label: "Finalizado" },
+  { value: "obra_ejecucion", label: "Ejecución de obra" },
+  { value: "cierre", label: "Cierre" },
   { value: "archivado", label: "Archivado" },
+  { value: "cancelado", label: "Cancelado" },
 ]
 
 const ROLE_LABELS: Record<string, string> = {

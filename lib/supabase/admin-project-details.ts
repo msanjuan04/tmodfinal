@@ -193,7 +193,7 @@ export async function getAdminProjectDetails(projectId: string): Promise<AdminPr
 
   if (project.estimated_delivery) {
     const deliveryDate = new Date(project.estimated_delivery)
-    if (deliveryDate < today && project.status !== "finalizado") {
+    if (deliveryDate < today && project.status !== "cierre") {
       alerts.push({
         id: `${project.id}-delivery`,
         message: "La fecha de entrega estimada ha pasado. Revisa el cronograma con el cliente.",

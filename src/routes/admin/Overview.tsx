@@ -19,9 +19,14 @@ import "leaflet/dist/leaflet.css"
 import { ResponsiveContainer, BarChart, Bar, CartesianGrid, XAxis, Tooltip, Cell } from "recharts"
 
 const STATUS_LABELS: Record<string, string> = {
-  en_progreso: "En progreso",
-  finalizado: "Finalizado",
-  pendiente: "Pendiente",
+  inicial: "Inicial",
+  diseno: "Diseño",
+  presupuesto: "Presupuesto",
+  planificacion: "Planificación",
+  obra_ejecucion: "Ejecución de obra",
+  cierre: "Cierre",
+  archivado: "Archivado",
+  cancelado: "Cancelado",
 }
 
 const BAR_COLORS = ["#2F4F4F", "#C6B89E", "#0D9488", "#B45309", "#DB2777", "#4B5563"]
