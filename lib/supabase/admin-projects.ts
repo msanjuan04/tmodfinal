@@ -14,12 +14,21 @@ import type {
   AdminProjectTimelineEvent,
   AdminProjectTeamRole,
 } from "@app/types/admin"
+import {
+  sendDocumentLifecycleEmail,
+  sendMilestoneCompletedEmail,
+  sendProjectStatusChangeEmail,
+  sendTeamAssignmentEmail,
+} from "../../server/services/email"
+import { getProjectStatusMeta } from "../../server/services/email/project-status-meta"
+import { hasRecentNotification, recordNotification } from "../../server/services/scheduler/dedupe"
 
 const STORAGE_BUCKET = "project-assets"
 
 export const PROJECT_TEAM_ROLES: AdminProjectTeamRole[] = ["director", "arquitecto", "ingeniero", "instalador", "coordinador", "logistica", "otro"]
 
-const PROJECT_STATUS_DEFAULT: AdminProjectStatus = "planificacion"
+// Los proyectos nuevos nacen en la fase inicial del flujo canónico.
+const PROJECT_STATUS_DEFAULT: AdminProjectStatus = "inicial"
 
 type TeamAssignmentsMap = Partial<Record<AdminProjectTeamRole, string | null>>
 
@@ -174,6 +183,19 @@ export async function updateAdminProjectBasics(projectId: string, payload: Parti
     updated_at: new Date().toISOString(),
   }
 
+  // Guardamos el status previo para detectar si el cambio merece correo al
+  // cliente (y con qué copy). Lo hacemos antes del UPDATE para saber la
+  // transición exacta.
+  let previousStatus: string | null = null
+  if (payload.status !== undefined) {
+    const { data: existing } = await supabase
+      .from("projects")
+      .select("status")
+      .eq("id", projectId)
+      .maybeSingle()
+    previousStatus = existing?.status ?? null
+  }
+
   if (payload.name !== undefined) update.name = payload.name.trim()
   if (payload.code !== undefined) update.code = payload.code ?? null
   if (payload.status !== undefined) update.status = payload.status ?? PROJECT_STATUS_DEFAULT
@@ -193,12 +215,94 @@ export async function updateAdminProjectBasics(projectId: string, payload: Parti
     const managerAssignments: TeamAssignmentsMap = { director: payload.managerId ?? null }
     await assignProjectTeamRoles(projectId, managerAssignments)
   }
+
+  // Fire-and-forget: notificamos al cliente solo cuando el status cambia a un
+  // estado "comunicable" (ver project-status-meta.ts).
+  if (payload.status && typeof payload.status === "string" && payload.status !== previousStatus) {
+    void notifyProjectStatusChange(projectId, payload.status, previousStatus).catch((err) =>
+      console.error("[project-status-change] fallo notificando", err),
+    )
+  }
+}
+
+async function notifyProjectStatusChange(
+  projectId: string,
+  newStatus: string,
+  previousStatus: string | null,
+): Promise<void> {
+  const meta = getProjectStatusMeta(newStatus)
+  if (!meta || !meta.notify) return
+
+  const supabase = createServerSupabaseClient()
+
+  // Dedupe: no reenviamos el mismo {proyecto, status} si ya se mandó antes.
+  const dedupeKey = `${projectId}:${newStatus}`
+  const alreadySent = await hasRecentNotification({
+    supabase,
+    type: "project_status_change",
+    relatedId: dedupeKey,
+  })
+  if (alreadySent) return
+
+  const { data: project, error } = await supabase
+    .from("projects")
+    .select(`
+      id, name, slug, client_id,
+      clients:clients(id, full_name, email)
+    `)
+    .eq("id", projectId)
+    .maybeSingle()
+
+  if (error || !project) {
+    console.error("[project-status-change] no se pudo cargar proyecto", error)
+    return
+  }
+
+  const client = Array.isArray(project.clients) ? project.clients[0] : project.clients
+  if (!client?.email) return
+
+  try {
+    await sendProjectStatusChangeEmail({
+      to: client.email,
+      name: client.full_name ?? "Cliente Terrazea",
+      projectName: project.name,
+      projectSlug: project.slug,
+      status: newStatus as any,
+      statusLabel: meta.label,
+      description: meta.description,
+      nextSteps: meta.nextSteps,
+    })
+
+    await recordNotification({
+      supabase,
+      type: "project_status_change",
+      relatedId: dedupeKey,
+      audience: "client",
+      clientId: client.id ?? project.client_id ?? null,
+      projectId: project.id,
+      title: `Cambio de fase: ${meta.label}`,
+      description: previousStatus ? `Antes: ${previousStatus}` : undefined,
+    })
+  } catch (emailError) {
+    console.error("[project-status-change] error enviando correo", emailError)
+  }
 }
 
 export async function assignProjectTeamRoles(projectId: string, assignments: TeamAssignmentsMap): Promise<void> {
   const supabase = createServerSupabaseClient()
 
   const rolesToAffect = Object.keys(assignments)
+
+  // Foto previa: team_member_ids que YA estaban en este proyecto (en cualquier
+  // rol). Sirve para detectar, tras el upsert, quién es verdaderamente nuevo
+  // y merece correo.
+  const { data: priorAssignments } = await supabase
+    .from("project_team_members")
+    .select("team_member_id")
+    .eq("project_id", projectId)
+  const priorMemberIds = new Set(
+    (priorAssignments ?? []).map((row: any) => row.team_member_id).filter(Boolean) as string[],
+  )
 
   if (rolesToAffect.length > 0) {
     const { error: deleteError } = await supabase
@@ -223,6 +327,105 @@ export async function assignProjectTeamRoles(projectId: string, assignments: Tea
     const { error: upsertError } = await supabase.from("project_team_members").insert(rows)
     if (upsertError) throw upsertError
   }
+
+  // Miembros que han pasado a estar en el proyecto (no estaban antes). Les
+  // mandamos correo asíncronamente para no bloquear la respuesta al admin.
+  const newlyAssigned = rows
+    .map((row) => ({ memberId: row.team_member_id as string, role: row.assigned_role }))
+    .filter(({ memberId }) => memberId && !priorMemberIds.has(memberId))
+
+  if (newlyAssigned.length > 0) {
+    void notifyTeamAssignments(projectId, newlyAssigned).catch((err) =>
+      console.error("[team-assignment] fallo notificando", err),
+    )
+  }
+}
+
+async function notifyTeamAssignments(
+  projectId: string,
+  newlyAssigned: Array<{ memberId: string; role: string }>,
+): Promise<void> {
+  const supabase = createServerSupabaseClient()
+
+  const { data: project, error } = await supabase
+    .from("projects")
+    .select(`
+      id, name, slug, start_date, estimated_delivery,
+      clients:clients(full_name)
+    `)
+    .eq("id", projectId)
+    .maybeSingle()
+
+  if (error || !project) {
+    console.error("[team-assignment] no se pudo cargar proyecto", error)
+    return
+  }
+
+  const memberIds = newlyAssigned.map((item) => item.memberId)
+  const { data: members, error: membersError } = await supabase
+    .from("team_members")
+    .select("id, full_name, email")
+    .in("id", memberIds)
+
+  if (membersError) {
+    console.error("[team-assignment] no se pudieron cargar miembros", membersError)
+    return
+  }
+
+  const memberById = new Map((members ?? []).map((row: any) => [row.id as string, row]))
+  const clientRow = Array.isArray(project.clients) ? project.clients[0] : project.clients
+
+  for (const { memberId, role } of newlyAssigned) {
+    const member = memberById.get(memberId)
+    if (!member?.email) continue
+
+    const dedupeKey = `${projectId}:${memberId}`
+    const alreadySent = await hasRecentNotification({
+      supabase,
+      type: "team_assignment",
+      relatedId: dedupeKey,
+    })
+    if (alreadySent) continue
+
+    try {
+      await sendTeamAssignmentEmail({
+        to: member.email,
+        recipientName: member.full_name ?? "Equipo Terrazea",
+        projectName: project.name,
+        projectSlug: project.slug,
+        clientName: clientRow?.full_name ?? null,
+        roleLabel: humanRoleLabel(role),
+        startDate: project.start_date,
+        estimatedDelivery: project.estimated_delivery,
+      })
+
+      await recordNotification({
+        supabase,
+        type: "team_assignment",
+        relatedId: dedupeKey,
+        audience: "admin",
+        clientId: null,
+        projectId: project.id,
+        title: `Asignación: ${project.name}`,
+        description: `${member.full_name ?? member.email} · ${humanRoleLabel(role)}`,
+      })
+    } catch (emailError) {
+      console.error(`[team-assignment] fallo enviando a ${member.email}`, emailError)
+    }
+  }
+}
+
+function humanRoleLabel(role: string): string {
+  const labels: Record<string, string> = {
+    director: "Director de proyecto",
+    arquitecto: "Arquitecto/a",
+    ingeniero: "Ingeniero/a",
+    instalador: "Instalador/a",
+    coordinador: "Coordinador/a",
+    logistica: "Logística",
+    otro: "Colaborador/a",
+  }
+  return labels[role] ?? role
 }
 
 export async function archiveAdminProject(projectId: string): Promise<void> {
@@ -265,7 +468,7 @@ export async function duplicateAdminProject(projectId: string): Promise<{ id: st
     name: copyName,
     slug: copySlug,
     clientId: project.client_id,
-    status: "borrador",
+    status: "inicial",
     startDate: project.start_date ?? null,
     estimatedDelivery: project.estimated_delivery ?? null,
     locationCity: project.location_city ?? null,
@@ -433,7 +636,7 @@ export async function listAdminProjects(filters: AdminProjectListFilters = {}): 
         code: project.code ?? null,
         clientName: clientInfo?.full_name ?? null,
         clientEmail: clientInfo?.email ?? null,
-        status: project.status ?? "en_progreso",
+        status: project.status ?? "inicial",
         progressPercent: Number(project.progress_percent ?? 0),
         startDate: project.start_date ?? null,
         estimatedDelivery: project.estimated_delivery ?? null,
@@ -725,7 +928,7 @@ export async function getAdminProjectDetail(projectRef: string): Promise<AdminPr
       name: projectRow.name,
       slug: projectRow.slug ?? null,
       code: projectRow.code ?? null,
-      status: projectRow.status ?? "en_progreso",
+      status: projectRow.status ?? "inicial",
       startDate: projectRow.start_date ?? null,
       estimatedDelivery: projectRow.estimated_delivery ?? null,
       locationCity: projectRow.location_city ?? null,
@@ -799,6 +1002,15 @@ export async function createProjectMilestone(projectId: string, payload: AdminPr
 
 export async function updateProjectMilestone(milestoneId: string, payload: Partial<AdminProjectMilestoneInput>): Promise<void> {
   const supabase = createServerSupabaseClient()
+
+  // Foto del hito antes del update para saber si la transición nos interesa
+  // (pasar a 'completed' desde cualquier otro estado).
+  const { data: before } = await supabase
+    .from("project_milestones")
+    .select("id, title, summary, status, project_id")
+    .eq("id", milestoneId)
+    .maybeSingle()
+
   const { error, data } = await supabase
     .from("project_milestones")
     .update({
@@ -812,11 +1024,77 @@ export async function updateProjectMilestone(milestoneId: string, payload: Parti
       progress_percent: payload.progressPercent ?? undefined,
     })
     .eq("id", milestoneId)
-    .select("project_id")
+    .select("project_id, title, summary, status")
     .maybeSingle()
 
   if (error || !data) throw error ?? new Error("No se pudo actualizar el hito")
   await recalculateProjectCompositeProgress(data.project_id)
+
+  // Si el hito acaba de marcarse como completado, notificamos al cliente.
+  const becameCompleted = before?.status !== "completed" && data.status === "completed"
+  if (becameCompleted) {
+    void notifyMilestoneCompleted(milestoneId, data.project_id, data.title, data.summary).catch((err) =>
+      console.error("[milestone-completed] fallo notificando", err),
+    )
+  }
+}
+
+async function notifyMilestoneCompleted(
+  milestoneId: string,
+  projectId: string,
+  milestoneTitle: string,
+  milestoneSummary: string | null,
+): Promise<void> {
+  const supabase = createServerSupabaseClient()
+
+  const alreadySent = await hasRecentNotification({
+    supabase,
+    type: "milestone_completed",
+    relatedId: milestoneId,
+  })
+  if (alreadySent) return
+
+  const { data: project, error } = await supabase
+    .from("projects")
+    .select(`
+      id, name, slug, client_id, progress_percent,
+      clients:clients(id, full_name, email)
+    `)
+    .eq("id", projectId)
+    .maybeSingle()
+
+  if (error || !project) {
+    console.error("[milestone-completed] no se pudo cargar proyecto", error)
+    return
+  }
+
+  const client = Array.isArray(project.clients) ? project.clients[0] : project.clients
+  if (!client?.email) return
+
+  try {
+    await sendMilestoneCompletedEmail({
+      to: client.email,
+      name: client.full_name ?? "Cliente Terrazea",
+      projectName: project.name,
+      projectSlug: project.slug,
+      milestoneTitle,
+      milestoneSummary,
+      projectProgressPercent: typeof project.progress_percent === "number" ? project.progress_percent : null,
+    })
+
+    await recordNotification({
+      supabase,
+      type: "milestone_completed",
+      relatedId: milestoneId,
+      audience: "client",
+      clientId: client.id ?? project.client_id ?? null,
+      projectId: project.id,
+      title: `Hito completado: ${milestoneTitle}`,
+      description: milestoneSummary ?? undefined,
+    })
+  } catch (emailError) {
+    console.error("[milestone-completed] error enviando correo", emailError)
+  }
 }
 
 export async function reorderProjectMilestones(projectId: string, items: Array<{ id: string; sortOrder: number }>): Promise<void> {
@@ -952,6 +1230,15 @@ export async function createProjectDocument(projectId: string, payload: AdminPro
 
 export async function updateProjectDocument(documentId: string, payload: Partial<AdminProjectDocumentInput>): Promise<void> {
   const supabase = createServerSupabaseClient()
+
+  // Foto previa: necesitamos saber si cambia el storage (replacement) y si el
+  // documento estaba marcado como visible al cliente antes del update.
+  const { data: before } = await supabase
+    .from("project_documents")
+    .select("id, name, category, storage_path, notify_client, project_id")
+    .eq("id", documentId)
+    .maybeSingle()
+
   const { error } = await supabase
     .from("project_documents")
     .update({
@@ -969,12 +1256,108 @@ export async function updateProjectDocument(documentId: string, payload: Partial
     })
     .eq("id", documentId)
   if (error) throw error
+
+  // Notificamos sólo si el documento era visible al cliente y ha cambiado el
+  // archivo físico (storage_path). Cambios de tags, notas, etc. no disparan
+  // correo para no crear ruido.
+  const storageChanged =
+    payload.storagePath !== undefined && before?.storage_path !== payload.storagePath
+  if (storageChanged && before?.notify_client && before?.project_id) {
+    void notifyDocumentLifecycle({
+      variant: "replaced",
+      projectId: before.project_id,
+      documentId,
+      documentName: (payload.name?.trim() ?? before.name) as string,
+      documentCategory: (payload.category ?? before.category) as string | null,
+    }).catch((err) => console.error("[document-replaced] fallo notificando", err))
+  }
 }
 
 export async function deleteProjectDocument(documentId: string): Promise<void> {
   const supabase = createServerSupabaseClient()
+
+  const { data: before } = await supabase
+    .from("project_documents")
+    .select("id, name, category, notify_client, project_id")
+    .eq("id", documentId)
+    .maybeSingle()
+
   const { error } = await supabase.from("project_documents").delete().eq("id", documentId)
   if (error) throw error
+
+  if (before?.notify_client && before?.project_id && before?.name) {
+    void notifyDocumentLifecycle({
+      variant: "deleted",
+      projectId: before.project_id,
+      documentId,
+      documentName: before.name,
+      documentCategory: before.category as string | null,
+    }).catch((err) => console.error("[document-deleted] fallo notificando", err))
+  }
+}
+
+async function notifyDocumentLifecycle(params: {
+  variant: "replaced" | "deleted"
+  projectId: string
+  documentId: string
+  documentName: string
+  documentCategory: string | null
+}): Promise<void> {
+  const supabase = createServerSupabaseClient()
+
+  // Dedupe defensivo: mismo documento + misma variante = no duplicar.
+  const dedupeKey = `${params.documentId}:${params.variant}`
+  const alreadySent = await hasRecentNotification({
+    supabase,
+    type: `document_${params.variant}`,
+    relatedId: dedupeKey,
+  })
+  if (alreadySent) return
+
+  const { data: project, error } = await supabase
+    .from("projects")
+    .select(`
+      id, name, client_id,
+      clients:clients(id, full_name, email)
+    `)
+    .eq("id", params.projectId)
+    .maybeSingle()
+
+  if (error || !project) {
+    console.error("[document-lifecycle] no se pudo cargar proyecto", error)
+    return
+  }
+
+  const client = Array.isArray(project.clients) ? project.clients[0] : project.clients
+  if (!client?.email) return
+
+  try {
+    await sendDocumentLifecycleEmail({
+      to: client.email,
+      name: client.full_name ?? "Cliente Terrazea",
+      variant: params.variant,
+      documentName: params.documentName,
+      documentCategory: params.documentCategory,
+      projectName: project.name,
+      documentUrl: null,
+    })
+
+    await recordNotification({
+      supabase,
+      type: `document_${params.variant}`,
+      relatedId: dedupeKey,
+      audience: "client",
+      clientId: client.id ?? project.client_id ?? null,
+      projectId: project.id,
+      title:
+        params.variant === "deleted"
+          ? `Documento retirado: ${params.documentName}`
+          : `Documento actualizado: ${params.documentName}`,
+      description: params.documentCategory ?? undefined,
+    })
+  } catch (emailError) {
+    console.error(`[document-${params.variant}] error enviando correo`, emailError)
+  }
 }
 
 export interface AdminProjectPhotoInput {

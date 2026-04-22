@@ -1,32 +1,30 @@
 "use client"
 
 import { useEffect, useMemo, useRef, useState } from "react"
-
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import { Textarea } from "@/components/ui/textarea"
 import {
-  ChevronRight,
-  Loader2,
-  Paperclip,
-  Search,
-  Send,
+  ArrowLeft,
   Check,
   CheckCheck,
-  Clock,
-  Image as ImageIcon,
-  FileText,
-  File,
   Download,
-  Eye,
+  File as FileIcon,
+  Loader2,
+  MessageSquare,
+  Search,
+  Send,
+  X,
 } from "lucide-react"
 import { toast } from "sonner"
 
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { Textarea } from "@/components/ui/textarea"
+import { cn } from "@/lib/utils"
+
 import type { MessagesData } from "@/lib/supabase/queries"
+
+type MessageEntry = MessagesData["messagesByConversation"][string][number]
 
 interface MessagesViewProps {
   data: MessagesData
@@ -41,7 +39,7 @@ interface MessagesViewProps {
 
 export function MessagesView({
   data,
-  showHeader = true,
+  showHeader = false,
   initialConversationId = null,
   onConversationChange,
   onSendMessage,
@@ -56,23 +54,20 @@ export function MessagesView({
   const [messageInput, setMessageInput] = useState("")
   const [sending, setSending] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
+  const [mobileShowThread, setMobileShowThread] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement | null>(null)
-  const showConversationSidebar = !hideConversationList
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+  const showSidebar = !hideConversationList
 
   useEffect(() => {
     if (initialConversationId && initialConversationId !== selectedConversationId) {
       setSelectedConversationId(initialConversationId)
       return
     }
-
     if (!initialConversationId) {
-      if (selectedConversationId && data.conversations.some((conversation) => conversation.id === selectedConversationId)) {
-        return
-      }
-      const fallbackConversationId = data.conversations[0]?.id ?? null
-      if (fallbackConversationId !== selectedConversationId) {
-        setSelectedConversationId(fallbackConversationId)
-      }
+      if (selectedConversationId && data.conversations.some((c) => c.id === selectedConversationId)) return
+      const fallback = data.conversations[0]?.id ?? null
+      if (fallback !== selectedConversationId) setSelectedConversationId(fallback)
     }
   }, [initialConversationId, data.conversations, selectedConversationId])
 
@@ -81,21 +76,23 @@ export function MessagesView({
   }, [selectedConversationId, onConversationChange])
 
   const selectedConversation = useMemo(
-    () => data.conversations.find((conversation) => conversation.id === selectedConversationId) ?? data.conversations[0],
+    () => data.conversations.find((c) => c.id === selectedConversationId) ?? data.conversations[0],
     [data.conversations, selectedConversationId],
   )
 
   const filteredConversations = useMemo(() => {
-    const normalizedQuery = searchQuery.trim().toLowerCase()
-    if (!normalizedQuery) return data.conversations
-    return data.conversations.filter((conversation) => {
-      const nameMatch = conversation.name.toLowerCase().includes(normalizedQuery)
-      const roleMatch = conversation.role?.toLowerCase().includes(normalizedQuery)
-      return nameMatch || roleMatch
+    const q = searchQuery.trim().toLowerCase()
+    if (!q) return data.conversations
+    return data.conversations.filter((c) => {
+      const name = c.name.toLowerCase().includes(q)
+      const role = c.role?.toLowerCase().includes(q)
+      return name || role
     })
   }, [data.conversations, searchQuery])
 
   const messages = selectedConversation ? data.messagesByConversation[selectedConversation.id] ?? [] : []
+
+  const messageGroups = useMemo(() => groupMessagesByDay(messages), [messages])
 
   const otherPartyName =
     viewerType === "client"
@@ -112,6 +109,8 @@ export function MessagesView({
       setSending(true)
       await onSendMessage(selectedConversation.id, content)
       setMessageInput("")
+      // Regresar foco al textarea
+      setTimeout(() => textareaRef.current?.focus(), 0)
     } catch (error) {
       console.error("Error sending message", error)
       toast.error("No se pudo enviar el mensaje. Inténtalo de nuevo.")
@@ -123,222 +122,265 @@ export function MessagesView({
   useEffect(() => {
     if (!messagesEndRef.current) return
     messagesEndRef.current.scrollIntoView({ behavior: "smooth" })
-  }, [messages, selectedConversationId])
+  }, [messages.length, selectedConversationId])
+
+  // Cuando el usuario abre una conversación en mobile, mostramos el panel del thread
+  useEffect(() => {
+    if (selectedConversationId) setMobileShowThread(true)
+  }, [selectedConversationId])
+
+  const unreadTotal = data.conversations.reduce((acc, c) => acc + (c.unreadCount ?? 0), 0)
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-4">
       {showHeader ? (
         <header>
-          <div className="flex items-center gap-2 text-sm text-[#6b7280]">
-            <span>Dashboard</span>
-            <ChevronRight className="h-4 w-4" />
-            <span className="text-[#2f4f4f]">Mensajes</span>
-          </div>
-          <div className="mt-4">
-            <h1 className="font-serif text-3xl font-bold text-[#2f4f4f] sm:text-4xl">Mensajes</h1>
-            <p className="mt-2 text-lg text-[#6b7280]">
-              {isAdminView ? "Responde a tus clientes como si fuera un chat de WhatsApp." : "Comunícate con tu equipo de construcción."}
-            </p>
-          </div>
+          <h1 className="font-heading text-3xl font-semibold text-[#2F4F4F] sm:text-4xl">Mensajes</h1>
+          <p className="mt-1 text-sm text-[#6B7280]">
+            {isAdminView ? "Responde a tus clientes en un solo lugar." : "Comunícate con tu equipo Terrazea."}
+          </p>
         </header>
       ) : null}
 
-      <section className={showConversationSidebar ? "grid gap-6 lg:grid-cols-[360px,1fr]" : "space-y-6"}>
-        {showConversationSidebar ? (
-          <Card className="border-[#e4dfd5] bg-white/90 shadow-sm">
-            <CardHeader className="flex flex-col gap-4 border-b border-[#f1eee7] pb-5">
-              <div>
-                <CardTitle className="text-lg text-[#1f2a2a]">Conversaciones</CardTitle>
-                <CardDescription className="text-sm text-[#6b7280]">
-                  Mantén todo organizado y encuentra chats al instante.
-                </CardDescription>
+      <section
+        className={cn(
+          "grid h-[calc(100vh-260px)] min-h-[560px] overflow-hidden rounded-[1.75rem] border border-[#E8E6E0] bg-white shadow-apple-md",
+          showSidebar ? "md:grid-cols-[340px_1fr]" : "grid-cols-1",
+        )}
+      >
+        {/* ================== Sidebar de conversaciones ================== */}
+        {showSidebar ? (
+          <aside
+            className={cn(
+              "flex flex-col border-r border-[#E8E6E0] bg-[#FAFAF8]",
+              // Mobile: se muestra si NO estamos viendo el thread
+              "md:flex",
+              mobileShowThread ? "hidden" : "flex",
+            )}
+          >
+            <div className="border-b border-[#E8E6E0] bg-white px-4 py-4">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <h3 className="flex items-center gap-2 font-heading text-base font-semibold text-[#2F4F4F]">
+                  <MessageSquare className="h-4 w-4" />
+                  Conversaciones
+                </h3>
+                {unreadTotal > 0 ? (
+                  <span className="inline-flex min-w-[22px] items-center justify-center rounded-full bg-[#B91C1C] px-1.5 text-[10px] font-bold text-white">
+                    {unreadTotal > 99 ? "99+" : unreadTotal}
+                  </span>
+                ) : null}
               </div>
               <div className="relative">
-                <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#9ca3af]" />
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#9CA3AF]" />
                 <Input
-                  placeholder="Buscar nombre o rol"
+                  placeholder="Buscar"
                   value={searchQuery}
-                  onChange={(event) => setSearchQuery(event.target.value)}
-                  className="w-full rounded-full border-[#e8e6e0] bg-[#f4f3ef] pl-11 text-sm text-[#2f4f4f] focus:border-[#1f3535] focus:ring-[#1f3535]/20"
-                  aria-label="Buscar conversación"
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="h-9 rounded-full border-[#E8E6E0] bg-[#F8F7F4] pl-8 pr-8 text-xs text-[#2F4F4F] focus:border-[#2F4F4F]"
                 />
+                {searchQuery ? (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery("")}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-0.5 text-[#9CA3AF] hover:bg-[#E8E6E0]"
+                    aria-label="Limpiar búsqueda"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                ) : null}
               </div>
-            </CardHeader>
-            <CardContent className="p-0">
-              <ScrollArea className="h-[640px]">
-                <div className="space-y-1 p-3">
-                  {filteredConversations.map((conversation) => (
-                    <button
-                      key={conversation.id}
-                      onClick={() => setSelectedConversationId(conversation.id)}
-                      className={`group relative flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition ${
-                        selectedConversation?.id === conversation.id
-                          ? "bg-[#d9fdd3]"
-                          : "bg-transparent hover:bg-[#f5f6f6]"
-                      }`}
-                    >
-                      <div className="relative flex-shrink-0 self-start">
-                        <Avatar className="h-10 w-10 border border-[#e3ddd2]">
-                          <AvatarImage src={conversation.avatarUrl || "/placeholder.svg?height=40&width=40"} />
-                          <AvatarFallback className="bg-[#c6b89e] text-[#2f4f4f]">
-                            {conversation.name.charAt(0)}
-                          </AvatarFallback>
-                        </Avatar>
-                        {conversation.status === "online" && (
-                          <span className="absolute -bottom-1 -right-1 h-3 w-3 rounded-full border-2 border-white bg-[#25d366]" />
+            </div>
+
+            <ScrollArea className="flex-1">
+              <div className="space-y-0.5 p-2">
+                {filteredConversations.length === 0 ? (
+                  <div className="rounded-[1.25rem] border border-dashed border-[#E8E6E0] bg-white px-4 py-10 text-center text-xs text-[#6B7280]">
+                    {searchQuery.trim()
+                      ? "No hay coincidencias."
+                      : "Aún no tienes conversaciones."}
+                  </div>
+                ) : (
+                  filteredConversations.map((conversation) => {
+                    const isActive = selectedConversation?.id === conversation.id
+                    return (
+                      <button
+                        key={conversation.id}
+                        type="button"
+                        onClick={() => setSelectedConversationId(conversation.id)}
+                        className={cn(
+                          "group flex w-full items-start gap-3 rounded-2xl px-3 py-2.5 text-left transition",
+                          isActive
+                            ? "bg-[#2F4F4F] text-white shadow-apple-sm"
+                            : "text-[#4B5563] hover:bg-white hover:text-[#2F4F4F]",
                         )}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-medium text-[#111b21]">{conversation.name}</p>
-                            <p className="truncate text-xs uppercase tracking-[0.3em] text-[#94a3b8]">
+                      >
+                        <div className="relative shrink-0">
+                          <Avatar
+                            className={cn(
+                              "h-10 w-10 border",
+                              isActive ? "border-white/30" : "border-[#E8E6E0]",
+                            )}
+                          >
+                            <AvatarImage src={conversation.avatarUrl || undefined} />
+                            <AvatarFallback
+                              className={cn(
+                                "text-xs font-semibold",
+                                isActive ? "bg-white/20 text-white" : "bg-[#F4F1EA] text-[#2F4F4F]",
+                              )}
+                            >
+                              {getInitials(conversation.name)}
+                            </AvatarFallback>
+                          </Avatar>
+                          {conversation.status === "online" ? (
+                            <span
+                              className={cn(
+                                "absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2",
+                                isActive ? "border-[#2F4F4F] bg-[#C7F9CC]" : "border-white bg-[#047857]",
+                              )}
+                            />
+                          ) : null}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-baseline justify-between gap-2">
+                            <p
+                              className={cn(
+                                "truncate text-sm font-semibold",
+                                isActive ? "text-white" : "text-[#2F4F4F]",
+                              )}
+                            >
+                              {conversation.name}
+                            </p>
+                            <span
+                              className={cn(
+                                "shrink-0 text-[10px]",
+                                isActive ? "text-white/70" : "text-[#9CA3AF]",
+                              )}
+                            >
+                              {formatConversationTime(conversation.lastMessageAt)}
+                            </span>
+                          </div>
+                          <div className="mt-0.5 flex items-center justify-between gap-2">
+                            <p
+                              className={cn(
+                                "truncate text-xs",
+                                isActive ? "text-white/80" : "text-[#6B7280]",
+                              )}
+                            >
+                              {conversation.lastMessagePreview ?? "Sin mensajes aún"}
+                            </p>
+                            {conversation.unreadCount > 0 && !isActive ? (
+                              <span className="inline-flex min-w-[18px] items-center justify-center rounded-full bg-[#2F4F4F] px-1.5 text-[10px] font-bold text-white">
+                                {conversation.unreadCount > 99 ? "99+" : conversation.unreadCount}
+                              </span>
+                            ) : null}
+                          </div>
+                          {conversation.role ? (
+                            <p
+                              className={cn(
+                                "mt-1 truncate text-[10px] uppercase tracking-[0.2em]",
+                                isActive ? "text-white/60" : "text-[#C6B89E]",
+                              )}
+                            >
                               {conversation.role}
                             </p>
-                          </div>
-                          <span className="text-xs text-[#8696a0]">
-                            {formatConversationTime(conversation.lastMessageAt)}
-                          </span>
+                          ) : null}
                         </div>
-                        <div className="mt-1 flex items-center justify-between gap-2">
-                          <p className="truncate text-xs text-[#62757f]">
-                            {conversation.lastMessagePreview ?? "Sin mensajes recientes"}
-                          </p>
-                          {conversation.unreadCount > 0 && (
-                            <Badge className="h-6 min-w-[24px] rounded-full bg-[#2F4F4F] px-2.5 text-xs font-bold text-white shadow-apple">
-                              {conversation.unreadCount > 99 ? "99+" : conversation.unreadCount}
-                            </Badge>
-                          )}
-                        </div>
-                      </div>
-                    </button>
-                  ))}
-                  {filteredConversations.length === 0 && (
-                    <div className="rounded-[1.25rem] border border-dashed border-[#E8E6E0] bg-[#F8F7F4] p-6 text-center text-sm text-[#6B7280]">
-                      {searchQuery.trim().length > 0
-                        ? "No encontramos coincidencias. Prueba con otro nombre o rol."
-                        : "Aún no tienes conversaciones activas. Cuando crees una, aparecerá aquí."}
-                    </div>
-                  )}
-                </div>
-              </ScrollArea>
-            </CardContent>
-          </Card>
-        ) : selectedConversation ? (
-          <Card className="border-[#e4dfd5] bg-white/80 shadow-sm">
-            <CardHeader className="pb-4">
-              <CardTitle className="text-lg text-[#1f2a2a]">Tu contacto asignado</CardTitle>
-              <CardDescription className="text-sm text-[#6b7280]">
-                Siempre hablarás con la misma persona para que no tengas que repetir información.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="flex items-center gap-4">
-              <div className="relative">
-                <Avatar className="h-16 w-16 border border-[#e3ddd2]">
-                  <AvatarImage src={selectedConversation.avatarUrl || "/placeholder.svg?height=64&width=64"} />
-                  <AvatarFallback className="bg-[#c6b89e] text-[#2f4f4f] text-xl">
-                    {selectedConversation.name.charAt(0)}
-                  </AvatarFallback>
-                </Avatar>
-                {selectedConversation.status === "online" && (
-                  <span className="absolute -bottom-1 -right-1 h-3 w-3 rounded-full border-2 border-white bg-[#25d366]" />
+                      </button>
+                    )
+                  })
                 )}
               </div>
-              <div className="space-y-1 text-sm text-[#4b5563]">
-                <p className="text-base font-semibold text-[#1f2a2a]">{selectedConversation.name}</p>
-                {selectedConversation.role ? (
-                  <p className="text-xs uppercase tracking-[0.3em] text-[#94a3b8]">{selectedConversation.role}</p>
-                ) : null}
-                <p className="text-xs text-[#6b7280]">
-                  Último mensaje: {formatConversationTime(selectedConversation.lastMessageAt)}
-                </p>
-              </div>
-            </CardContent>
-          </Card>
+            </ScrollArea>
+          </aside>
         ) : null}
 
-        <Card className="border-[#e4dfd5] bg-white/95 shadow-sm">
+        {/* ================== Panel del hilo ================== */}
+        <div
+          className={cn(
+            "flex min-h-0 flex-col",
+            showSidebar && !mobileShowThread ? "hidden md:flex" : "flex",
+          )}
+        >
           {selectedConversation ? (
             <>
-              <CardHeader className="flex flex-col gap-2 border-b border-[#efe9df] bg-white/90">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <div className="relative">
-                      <Avatar className="h-12 w-12">
-                        {viewerType === "client" ? (
-                          <>
-                            <AvatarImage src={selectedConversation.avatarUrl || "/placeholder.svg?height=40&width=40"} />
-                            <AvatarFallback className="bg-[#C6B89E] text-[#2F4F4F]">
-                              {selectedConversation.name.charAt(0)}
-                            </AvatarFallback>
-                          </>
-                        ) : (
-                          <>
-                            <AvatarImage src="/placeholder.svg?height=40&width=40" />
-                            <AvatarFallback className="bg-[#C6B89E] text-[#2F4F4F]">
-                              {(clientName ?? "Cliente").charAt(0).toUpperCase()}
-                            </AvatarFallback>
-                        </>
-                      )}
-                    </Avatar>
-                      {viewerType === "client" && selectedConversation.status === "online" ? (
-                        <span className="absolute -bottom-1 -right-1 h-3 w-3 rounded-full border-2 border-white bg-[#25d366]" />
-                      ) : null}
-                    </div>
-                    <div>
-                      {viewerType === "client" ? (
-                        <>
-                          <CardTitle className="text-xl text-[#1f2a2a]">{selectedConversation.name}</CardTitle>
-                          <CardDescription className="text-sm text-[#6b7280]">{selectedConversation.role}</CardDescription>
-                        </>
-                      ) : (
-                        <>
-                          <CardTitle className="text-xl text-[#1f2a2a]">
-                            {clientName && clientName.trim().length > 0 ? clientName : "Cliente Terrazea"}
-                          </CardTitle>
-                          <CardDescription className="text-sm text-[#6b7280]">
-                            {`Atención liderada por ${selectedConversation.name}${
-                              selectedConversation.role ? ` · ${selectedConversation.role}` : ""
-                            }`}
-                          </CardDescription>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                  <span
-                    className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs ${
-                      selectedConversation.status === "online"
-                        ? "bg-[#d9fdd3] text-[#1a7f37]"
-                        : "bg-[#f2f4f5] text-[#6b7280]"
-                    }`}
+              {/* Header del hilo */}
+              <header className="flex items-center gap-3 border-b border-[#E8E6E0] bg-white px-5 py-4">
+                {showSidebar ? (
+                  <button
+                    type="button"
+                    onClick={() => setMobileShowThread(false)}
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#E8E6E0] bg-white text-[#2F4F4F] transition hover:bg-[#F4F1EA] md:hidden"
+                    aria-label="Volver a conversaciones"
                   >
-                    <span className="h-2 w-2 rounded-full bg-current" />
-                    {selectedConversation.status === "online" ? "En línea" : "Desconectado"}
-                  </span>
+                    <ArrowLeft className="h-4 w-4" />
+                  </button>
+                ) : null}
+                <div className="relative shrink-0">
+                  <Avatar className="h-10 w-10 border border-[#E8E6E0]">
+                    {viewerType === "client" ? (
+                      <>
+                        <AvatarImage src={selectedConversation.avatarUrl || undefined} />
+                        <AvatarFallback className="bg-[#F4F1EA] text-xs font-semibold text-[#2F4F4F]">
+                          {getInitials(selectedConversation.name)}
+                        </AvatarFallback>
+                      </>
+                    ) : (
+                      <>
+                        <AvatarImage src={undefined} />
+                        <AvatarFallback className="bg-[#F4F1EA] text-xs font-semibold text-[#2F4F4F]">
+                          {getInitials(clientName ?? "Cliente")}
+                        </AvatarFallback>
+                      </>
+                    )}
+                  </Avatar>
+                  {viewerType === "client" && selectedConversation.status === "online" ? (
+                    <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-[#047857]" />
+                  ) : null}
                 </div>
-                <div className="flex flex-wrap gap-4 text-xs text-[#6b7280]">
-                  <p className="flex items-center gap-1">
-                    <span className="text-[10px] uppercase tracking-[0.3em] text-[#c6b89e]">Último</span>{" "}
-                    {formatConversationTime(selectedConversation.lastMessageAt)}
-                  </p>
-                  <p className="flex items-center gap-1">
-                    <span className="text-[10px] uppercase tracking-[0.3em] text-[#c6b89e]">Estado</span>{" "}
-                    {selectedConversation.unreadCount > 0 ? "Pendiente" : "Al día"}
-                  </p>
+                <div className="min-w-0 flex-1">
+                  {viewerType === "client" ? (
+                    <>
+                      <p className="font-heading text-base font-semibold text-[#2F4F4F]">
+                        {selectedConversation.name}
+                      </p>
+                      <p className="text-[11px] text-[#6B7280]">
+                        {selectedConversation.role ?? "Tu equipo Terrazea"}
+                        {selectedConversation.status === "online" ? (
+                          <span className="ml-2 inline-flex items-center gap-1 text-[#047857]">
+                            <span className="h-1.5 w-1.5 rounded-full bg-[#047857]" />
+                            En línea
+                          </span>
+                        ) : null}
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="font-heading text-base font-semibold text-[#2F4F4F]">
+                        {clientName && clientName.trim().length > 0 ? clientName : "Cliente Terrazea"}
+                      </p>
+                      <p className="text-[11px] text-[#6B7280]">
+                        Atiende: {selectedConversation.name}
+                        {selectedConversation.role ? ` · ${selectedConversation.role}` : ""}
+                      </p>
+                    </>
+                  )}
                 </div>
-              </CardHeader>
+              </header>
 
-              <CardContent className="p-0">
-                <div className="flex h-[540px] flex-col">
-                  <ScrollArea className="flex-1 bg-gradient-to-b from-[#ECE5DD] to-[#F5F0E8] px-4 py-6">
-                    {messages.length > 0 ? (
-                      <div className="space-y-6">
-                        {messages.map((message) => {
+              {/* Mensajes */}
+              <ScrollArea className="flex-1 bg-[#F4F1EA]">
+                <div className="space-y-5 px-5 py-6">
+                  {messages.length === 0 ? (
+                    <EmptyThreadState isAdminView={isAdminView} otherName={otherPartyName} />
+                  ) : (
+                    messageGroups.map((group) => (
+                      <div key={group.key} className="space-y-3">
+                        <DayDivider label={group.label} />
+                        {group.items.map((message) => {
                           const isOwn =
                             viewerType === "client"
                               ? message.senderType === "client"
                               : message.senderType === "team_member"
-
                           const senderName =
                             message.senderType === "team_member"
                               ? selectedConversation.name
@@ -347,7 +389,6 @@ export function MessagesView({
                                 : clientName && clientName.trim().length > 0
                                   ? clientName
                                   : "Cliente"
-
                           return (
                             <MessageBubble
                               key={message.id}
@@ -358,82 +399,66 @@ export function MessagesView({
                             />
                           )
                         })}
-                        <div ref={messagesEndRef} />
                       </div>
-                    ) : (
-                      <div className="rounded-[1.25rem] border border-dashed border-[#e8e6e0] bg-white/80 p-10 text-center text-sm text-[#6b7280]">
-                        Aún no hay mensajes en esta conversación. Sé el primero en saludar.
-                      </div>
-                    )}
-                  </ScrollArea>
-                  <div className="border-t border-[#e8e6e0] bg-white/95 px-5 py-4">
-                    <div className="mb-2 flex items-center justify-between">
-                      <p className="text-xs text-[#94a3b8]">
-                        Presiona Enter para enviar o Shift + Enter para salto de línea.
-                      </p>
-                      {messageInput.trim().length > 0 && (
-                        <div className="flex items-center gap-1.5 text-xs text-[#6B7280]">
-                          <Clock className="h-3 w-3" />
-                          <span>Escribiendo...</span>
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex items-end gap-3">
-                      <Textarea
-                        placeholder={`Escribe un mensaje para ${otherPartyName}...`}
-                        value={messageInput}
-                        onChange={(event) => setMessageInput(event.target.value)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter" && !event.shiftKey) {
-                            event.preventDefault()
-                            void handleSendMessage()
-                          }
-                        }}
-                        disabled={!onSendMessage || !selectedConversation || sending}
-                        className="max-h-32 min-h-[56px] w-full resize-none rounded-2xl border border-transparent bg-[#f0f2f5] px-4 py-3 text-sm text-[#1f2a2a] shadow-inner focus-visible:ring-[#1f3535] disabled:cursor-not-allowed disabled:opacity-70"
-                      />
-                      <div className="flex items-center gap-2">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="rounded-full text-[#94a3b8] hover:text-[#1f3535]"
-                          disabled
-                        >
-                          <Paperclip className="h-5 w-5" />
-                        </Button>
-                        <Button
-                          className="flex h-12 w-12 items-center justify-center rounded-full bg-[#25d366] text-white hover:bg-[#1daa57]"
-                          onClick={() => {
-                            void handleSendMessage()
-                          }}
-                          disabled={
-                            !onSendMessage ||
-                            !selectedConversation ||
-                            sending ||
-                            messageInput.trim().length === 0
-                          }
-                          aria-label="Enviar mensaje"
-                        >
-                          {sending ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
+                    ))
+                  )}
+                  <div ref={messagesEndRef} />
                 </div>
-              </CardContent>
+              </ScrollArea>
+
+              {/* Composer */}
+              <div className="border-t border-[#E8E6E0] bg-white px-4 py-3">
+                <div className="flex items-end gap-2">
+                  <Textarea
+                    ref={textareaRef}
+                    value={messageInput}
+                    onChange={(e) => setMessageInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault()
+                        void handleSendMessage()
+                      }
+                    }}
+                    placeholder={`Mensaje para ${otherPartyName}…`}
+                    disabled={!onSendMessage || !selectedConversation || sending}
+                    rows={1}
+                    className="max-h-32 min-h-[44px] flex-1 resize-none rounded-2xl border-[#E8E6E0] bg-[#F8F7F4] px-4 py-2.5 text-sm text-[#2F4F4F] focus-visible:ring-[#2F4F4F]/20 disabled:opacity-60"
+                  />
+                  <Button
+                    type="button"
+                    onClick={() => void handleSendMessage()}
+                    disabled={
+                      !onSendMessage ||
+                      !selectedConversation ||
+                      sending ||
+                      messageInput.trim().length === 0
+                    }
+                    aria-label="Enviar mensaje"
+                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#2F4F4F] text-white transition hover:bg-[#1F3535] disabled:bg-[#E8E6E0] disabled:text-[#9CA3AF]"
+                  >
+                    {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                  </Button>
+                </div>
+                <p className="mt-1.5 text-center text-[10px] text-[#9CA3AF]">
+                  <kbd className="rounded bg-[#F8F7F4] px-1.5 py-0.5 font-mono text-[9px] text-[#4B5563]">Enter</kbd>{" "}
+                  enviar ·{" "}
+                  <kbd className="rounded bg-[#F8F7F4] px-1.5 py-0.5 font-mono text-[9px] text-[#4B5563]">
+                    Shift + Enter
+                  </kbd>{" "}
+                  nueva línea
+                </p>
+              </div>
             </>
           ) : (
-            <CardContent className="flex h-full items-center justify-center">
-              <div className="rounded-[1.25rem] border border-dashed border-[#E8E6E0] bg-[#F8F7F4] px-10 py-12 text-center text-sm text-[#6B7280]">
-                Selecciona una conversación para comenzar.
-              </div>
-            </CardContent>
+            <EmptySelectedState />
           )}
-        </Card>
+        </div>
       </section>
     </div>
   )
 }
+
+// ============================= Subcomponentes =============================
 
 function MessageBubble({
   content,
@@ -446,41 +471,33 @@ function MessageBubble({
   senderName: string
   isOwn: boolean
 }) {
-  // Detectar si el mensaje contiene URLs de imágenes o archivos
-  const imageUrlMatch = content.match(/https?:\/\/[^\s]+\.(jpg|jpeg|png|gif|webp|svg)/i)
-  const fileUrlMatch = content.match(/https?:\/\/[^\s]+\.(pdf|doc|docx|xls|xlsx|zip|rar)/i)
-  const hasAttachment = imageUrlMatch || fileUrlMatch
-
-  // Estado del mensaje (simulado - en producción vendría del backend)
-  const messageStatus: "sending" | "sent" | "delivered" | "read" = "read"
+  const imageMatch = content.match(/https?:\/\/[^\s]+\.(jpg|jpeg|png|gif|webp|svg)/i)
+  const fileMatch = content.match(/https?:\/\/[^\s]+\.(pdf|doc|docx|xls|xlsx|zip|rar)/i)
+  const cleanText = content.replace(/https?:\/\/[^\s]+/g, "").trim() || (imageMatch || fileMatch ? "" : content)
 
   return (
-    <div className={`flex items-end gap-2 ${isOwn ? "justify-end" : "justify-start"}`}>
-      {!isOwn && (
-        <Avatar className="h-8 w-8 shrink-0 border border-[#E8E6E0]">
-          <AvatarFallback className="bg-[#C6B89E] text-xs text-[#2F4F4F]">
-            {senderName.charAt(0).toUpperCase()}
+    <div className={cn("flex items-end gap-2", isOwn ? "justify-end" : "justify-start")}>
+      {!isOwn ? (
+        <Avatar className="h-7 w-7 shrink-0 border border-[#E8E6E0]">
+          <AvatarFallback className="bg-white text-[10px] font-semibold text-[#2F4F4F]">
+            {getInitials(senderName)}
           </AvatarFallback>
         </Avatar>
-      )}
+      ) : null}
 
-      <div className={`flex max-w-[75%] flex-col gap-1 ${isOwn ? "items-end" : "items-start"}`}>
-        {!isOwn && (
-          <p className="px-2 text-[11px] font-semibold uppercase tracking-[0.25em] text-[#6B7280]">{senderName}</p>
-        )}
-
+      <div className={cn("flex max-w-[75%] flex-col gap-0.5", isOwn ? "items-end" : "items-start")}>
         <div
-          className={`group relative rounded-2xl px-4 py-3 text-sm shadow-apple-md transition-all duration-200 ${
+          className={cn(
+            "relative rounded-2xl px-3.5 py-2 text-sm leading-relaxed shadow-apple-sm",
             isOwn
-              ? "rounded-br-md bg-gradient-to-br from-[#D9FDD3] to-[#C7F9CC] text-[#111b21]"
-              : "rounded-bl-md bg-white text-[#111b21]"
-          }`}
+              ? "rounded-br-md bg-[#2F4F4F] text-white"
+              : "rounded-bl-md border border-[#E8E6E0] bg-white text-[#2F4F4F]",
+          )}
         >
-          {/* Preview de imagen */}
-          {imageUrlMatch && (
-            <div className="mb-3 overflow-hidden rounded-[1rem] border border-[#E8E6E0]">
+          {imageMatch ? (
+            <div className="mb-2 overflow-hidden rounded-[0.85rem] border border-white/10">
               <img
-                src={imageUrlMatch[0]}
+                src={imageMatch[0]}
                 alt="Imagen adjunta"
                 className="max-h-64 w-full object-cover"
                 onError={(e) => {
@@ -488,79 +505,156 @@ function MessageBubble({
                 }}
               />
             </div>
+          ) : null}
+
+          {fileMatch && !imageMatch ? (
+            <a
+              href={fileMatch[0]}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={cn(
+                "mb-2 flex items-center gap-2 rounded-[0.85rem] p-2.5 text-xs transition",
+                isOwn
+                  ? "bg-white/10 text-white hover:bg-white/20"
+                  : "border border-[#E8E6E0] bg-[#F8F7F4] text-[#2F4F4F] hover:bg-[#F4F1EA]",
+              )}
+            >
+              <FileIcon className="h-4 w-4 shrink-0" />
+              <span className="truncate font-medium">{fileMatch[0].split("/").pop()}</span>
+              <Download className="h-3.5 w-3.5 shrink-0 opacity-70" />
+            </a>
+          ) : null}
+
+          {cleanText ? (
+            <p className="whitespace-pre-line break-words">{cleanText}</p>
+          ) : null}
+        </div>
+        <div
+          className={cn(
+            "flex items-center gap-1 px-1 text-[10px]",
+            isOwn ? "text-[#9CA3AF]" : "text-[#9CA3AF]",
           )}
-
-          {/* Preview de archivo */}
-          {fileUrlMatch && !imageUrlMatch && (
-            <div className="mb-3 flex items-center gap-3 rounded-[1rem] border border-[#E8E6E0] bg-[#F8F7F4] p-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#2F4F4F] text-white">
-                <File className="h-5 w-5" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="truncate text-xs font-medium text-[#2F4F4F]">Archivo adjunto</p>
-                <p className="text-[10px] text-[#6B7280]">{fileUrlMatch[0].split("/").pop()}</p>
-              </div>
-              <a
-                href={fileUrlMatch[0]}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="rounded-lg p-2 text-[#2F4F4F] transition hover:bg-[#E8E6E0]"
-                title="Descargar archivo"
-              >
-                <Download className="h-4 w-4" />
-              </a>
-            </div>
-          )}
-
-          {/* Contenido del mensaje */}
-          <p className="whitespace-pre-line leading-relaxed">{content.replace(/https?:\/\/[^\s]+/g, "").trim() || content}</p>
-
-          {/* Footer con hora y estado */}
-          <div className={`mt-2 flex items-center gap-1.5 ${isOwn ? "justify-end" : "justify-start"}`}>
-            <span className={`text-[11px] ${isOwn ? "text-[#667781]" : "text-[#94a3b8]"}`}>{time}</span>
-            {isOwn && (
-              <div className="flex items-center">
-                {messageStatus === "sending" && <Clock className="h-3 w-3 text-[#94a3b8]" />}
-                {messageStatus === "sent" && <Check className="h-3.5 w-3.5 text-[#94a3b8]" />}
-                {messageStatus === "delivered" && <CheckCheck className="h-3.5 w-3.5 text-[#94a3b8]" />}
-                {messageStatus === "read" && <CheckCheck className="h-3.5 w-3.5 text-[#25d366]" />}
-              </div>
-            )}
-          </div>
+        >
+          <span>{time}</span>
+          {isOwn ? <CheckCheck className="h-3 w-3 text-[#047857]" /> : null}
         </div>
       </div>
-
-      {isOwn && (
-        <Avatar className="h-8 w-8 shrink-0 border border-[#E8E6E0]">
-          <AvatarFallback className="bg-[#2F4F4F] text-xs text-white">Tú</AvatarFallback>
-        </Avatar>
-      )}
     </div>
   )
 }
 
+function DayDivider({ label }: { label: string }) {
+  return (
+    <div className="flex items-center justify-center">
+      <span className="rounded-full border border-[#E8E6E0] bg-white/80 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#6B7280] shadow-apple-sm backdrop-blur">
+        {label}
+      </span>
+    </div>
+  )
+}
+
+function EmptyThreadState({ isAdminView, otherName }: { isAdminView: boolean; otherName: string }) {
+  return (
+    <div className="mx-auto flex max-w-sm flex-col items-center gap-3 rounded-[1.5rem] border border-dashed border-[#E8E6E0] bg-white/60 px-6 py-10 text-center backdrop-blur">
+      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#F4F1EA] text-[#2F4F4F]">
+        <MessageSquare className="h-5 w-5" />
+      </div>
+      <div>
+        <p className="font-heading text-sm font-semibold text-[#2F4F4F]">
+          Sin mensajes en este hilo
+        </p>
+        <p className="mt-1 text-xs text-[#6B7280]">
+          {isAdminView
+            ? `Envía un primer mensaje a ${otherName} para abrir la conversación.`
+            : `Escribe un mensaje para ${otherName}. Te responderán cuando estén disponibles.`}
+        </p>
+      </div>
+    </div>
+  )
+}
+
+function EmptySelectedState() {
+  return (
+    <div className="flex flex-1 items-center justify-center bg-[#F8F7F4] p-8">
+      <div className="flex max-w-sm flex-col items-center gap-3 text-center">
+        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-white text-[#2F4F4F] shadow-apple-md">
+          <MessageSquare className="h-6 w-6" />
+        </div>
+        <p className="font-heading text-lg font-semibold text-[#2F4F4F]">
+          Selecciona una conversación
+        </p>
+        <p className="text-sm text-[#6B7280]">
+          Elige un contacto de la lista de la izquierda para ver los mensajes y responder.
+        </p>
+      </div>
+    </div>
+  )
+}
+
+// ============================= Utils =============================
+
+function getInitials(name: string): string {
+  const parts = (name ?? "").trim().split(/\s+/).filter(Boolean)
+  if (parts.length === 0) return "?"
+  if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase()
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+}
+
 function formatConversationTime(value: string | null): string {
-  if (!value) return "Sin fecha"
+  if (!value) return ""
   const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ""
   const now = new Date()
   const diffMs = now.getTime() - date.getTime()
   const diffHours = diffMs / (1000 * 60 * 60)
 
-  if (diffHours < 24) {
+  if (diffHours < 24 && date.getDate() === now.getDate()) {
     return date.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })
   }
-
-  if (diffHours < 48) {
-    return "Ayer"
-  }
-
-  if (diffHours < 24 * 7) {
-    return `${Math.floor(diffHours / 24)} día${Math.floor(diffHours / 24) === 1 ? "" : "s"}`
-  }
-
+  if (diffHours < 48) return "Ayer"
+  if (diffHours < 24 * 7) return `Hace ${Math.floor(diffHours / 24)}d`
   return date.toLocaleDateString("es-ES", { day: "2-digit", month: "short" })
 }
 
 function formatMessageTime(value: string): string {
-  return new Date(value).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ""
+  return date.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })
+}
+
+/** Agrupa mensajes por día natural con etiqueta legible ("Hoy", "Ayer", "22 abr 2026"). */
+function groupMessagesByDay(
+  messages: MessageEntry[],
+): Array<{ key: string; label: string; items: MessageEntry[] }> {
+  if (messages.length === 0) return []
+  const groups: Record<string, { key: string; label: string; items: MessageEntry[] }> = {}
+  const order: string[] = []
+  const today = stripTime(new Date())
+  const yesterday = new Date(today)
+  yesterday.setDate(today.getDate() - 1)
+
+  messages.forEach((msg) => {
+    const date = new Date(msg.sentAt)
+    if (Number.isNaN(date.getTime())) return
+    const key = date.toISOString().slice(0, 10)
+    if (!groups[key]) {
+      const stripped = stripTime(date)
+      const label =
+        stripped.getTime() === today.getTime()
+          ? "Hoy"
+          : stripped.getTime() === yesterday.getTime()
+            ? "Ayer"
+            : date.toLocaleDateString("es-ES", { day: "2-digit", month: "short", year: "numeric" })
+      groups[key] = { key, label, items: [] }
+      order.push(key)
+    }
+    groups[key].items.push(msg)
+  })
+  return order.map((key) => groups[key])
+}
+
+function stripTime(date: Date): Date {
+  const copy = new Date(date)
+  copy.setHours(0, 0, 0, 0)
+  return copy
 }

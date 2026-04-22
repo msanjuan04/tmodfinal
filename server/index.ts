@@ -9,6 +9,7 @@ import { authRouter } from "./routes/auth"
 import { clientRouter } from "./routes/client"
 import { adminRouter } from "./routes/admin"
 import { webhooksRouter } from "./routes/webhooks"
+import { startScheduler } from "./services/scheduler"
 
 const app = express()
 const MAX_PAYLOAD_SIZE = "150mb"
@@ -65,4 +66,5 @@ app.listen(env.port, () => {
   if (env.nodeEnv === "production") {
     console.log(`Frontend estático servido desde: ${path.resolve(process.cwd(), "dist")}`)
   }
+  startScheduler()
 })

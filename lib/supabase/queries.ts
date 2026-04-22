@@ -18,6 +18,9 @@ export interface DashboardData {
     name: string
     code: string | null
     clientName: string | null
+    // El responsable principal del proyecto (rol "director" en team_members)
+    // si está asignado; el dashboard lo pinta como "Gestor del proyecto".
+    managerName?: string | null
     status: string
     progressPercent: number
     startDate: string | null
@@ -53,6 +56,9 @@ export interface DashboardData {
     progressPercent: number
     status: StatusState
   }>
+  // Documentos recientes del proyecto visibles en la tarjeta "Documentación".
+  // Es opcional porque no todas las queries del dashboard los cargan.
+  documents?: DocumentRow[]
 }
 
 export interface ProjectDetailsData {
@@ -259,7 +265,7 @@ export async function getDashboardData(projectSlug?: string): Promise<DashboardD
       name: data.name,
       code: data.code ?? null,
       clientName: (data as { client?: { full_name?: string } })?.client?.full_name ?? null,
-      status: data.status ?? "en_progreso",
+      status: data.status ?? "inicial",
       progressPercent: Number(data.progress_percent ?? 0),
       startDate: data.start_date ?? null,
       estimatedDelivery: data.estimated_delivery ?? null,
@@ -378,7 +384,7 @@ export async function getProjectDetails(projectSlug?: string): Promise<ProjectDe
       id: data.id,
       name: data.name,
       code: data.code ?? null,
-      status: data.status ?? "en_progreso",
+      status: data.status ?? "inicial",
       progressPercent: Number(data.progress_percent ?? 0),
       locationCity: data.location_city ?? null,
       locationNotes: data.location_notes ?? null,
@@ -933,24 +939,60 @@ export async function sendClientConversationMessage(
     console.error("[notifications] No se pudo registrar la notificación de mensaje (admin)", notificationError)
   }
 
-  if (
-    shouldSendConversationEmail(previousMessageAt) &&
-    conversation.team_member?.email
-  ) {
+  if (shouldSendConversationEmail(previousMessageAt)) {
     const projectSlug = conversation.projects?.slug ?? ""
+    const projectId = conversation.projects?.id
     const ctaUrl = `${clientAppBase()}/dashboard/messages${projectSlug ? `?project=${projectSlug}` : ""}`
-    try {
-      await sendConversationNotificationEmail({
-        to: conversation.team_member.email,
-        recipientName: conversation.team_member.full_name ?? "Equipo Terrazea",
-        senderName: conversation.projects?.clients?.full_name ?? "Cliente Terrazea",
-        projectName: conversation.projects?.name ?? null,
-        messageSnippet: messagePreview,
-        ctaUrl,
-        audience: "team",
+    const senderName = conversation.projects?.clients?.full_name ?? "Cliente Terrazea"
+    const projectName = conversation.projects?.name ?? null
+
+    // Recipients: todos los miembros del equipo asignados al proyecto + el
+    // team_member de la conversación (por si es externo a las asignaciones).
+    // Deduplicamos por email.
+    const recipients = new Map<string, { email: string; fullName: string }>()
+
+    if (conversation.team_member?.email) {
+      recipients.set(conversation.team_member.email, {
+        email: conversation.team_member.email,
+        fullName: conversation.team_member.full_name ?? "Equipo Terrazea",
       })
-    } catch (notificationError) {
-      console.error("[email] No se pudo notificar al equipo del mensaje", notificationError)
+    }
+
+    if (projectId) {
+      const { data: assignedMembers } = await supabase
+        .from("project_team_members")
+        .select("team_member:team_members(id, full_name, email)")
+        .eq("project_id", projectId)
+
+      for (const row of assignedMembers ?? []) {
+        const member: any = Array.isArray(row.team_member) ? row.team_member[0] : row.team_member
+        if (!member?.email) continue
+        if (recipients.has(member.email)) continue
+        recipients.set(member.email, {
+          email: member.email,
+          fullName: member.full_name ?? "Equipo Terrazea",
+        })
+      }
+    }
+
+    if (recipients.size === 0) {
+      console.info("[email] mensaje cliente sin destinatarios de equipo")
+    }
+
+    for (const recipient of recipients.values()) {
+      try {
+        await sendConversationNotificationEmail({
+          to: recipient.email,
+          recipientName: recipient.fullName,
+          senderName,
+          projectName,
+          messageSnippet: messagePreview,
+          ctaUrl,
+          audience: "team",
+        })
+      } catch (notificationError) {
+        console.error(`[email] No se pudo notificar a ${recipient.email} del mensaje`, notificationError)
+      }
     }
   }
 }

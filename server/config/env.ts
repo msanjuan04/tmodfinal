@@ -43,6 +43,10 @@ const envSchema = z.object({
     },
     z.coerce.boolean().optional(),
   ),
+  FEEDBACK_REVIEW_URL: z.preprocess(
+    (value) => (typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined),
+    z.string().url().optional(),
+  ),
 })
 
 const parsed = envSchema.safeParse({
@@ -62,6 +66,7 @@ const parsed = envSchema.safeParse({
   RESEND_FROM_EMAIL: process.env.RESEND_FROM_EMAIL,
   RESEND_BCC: process.env.RESEND_BCC,
   RESEND_AUDIENCE_ID: process.env.RESEND_AUDIENCE_ID,
+  FEEDBACK_REVIEW_URL: process.env.FEEDBACK_REVIEW_URL,
 })
 
 if (!parsed.success) {
@@ -111,4 +116,5 @@ export const env = {
     audienceId: parsed.data.RESEND_AUDIENCE_ID ?? null,
     dryRun: parsed.data.RESEND_DRY_RUN ?? parsed.data.NODE_ENV !== "production",
   },
+  feedbackReviewUrl: parsed.data.FEEDBACK_REVIEW_URL ?? null,
 }
