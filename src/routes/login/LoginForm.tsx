@@ -1,5 +1,5 @@
 import { useEffect, useState, useTransition } from "react"
-import { useNavigate } from "react-router-dom"
+import { Link, useNavigate } from "react-router-dom"
 import { Loader2 } from "lucide-react"
 
 import { useAuth } from "@app/context/AuthContext"
@@ -13,15 +13,18 @@ interface LoginFormProps {
   redirectTo?: string
   reason?: string
   mode?: "client" | "admin"
+  initialLoginMode?: "email" | "code"
 }
 
-export function LoginForm({ redirectTo, reason, mode = "client" }: LoginFormProps) {
+export function LoginForm({ redirectTo, reason, mode = "client", initialLoginMode }: LoginFormProps) {
   const navigate = useNavigate()
   const { refresh } = useAuth()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [projectCode, setProjectCode] = useState("")
-  const [loginMode, setLoginMode] = useState<"email" | "code">("email")
+  const [loginMode, setLoginMode] = useState<"email" | "code">(
+    mode === "admin" ? "email" : initialLoginMode ?? "email",
+  )
   const [status, setStatus] = useState<LoginResult | null>(null)
   const [pending, startTransition] = useTransition()
 
@@ -95,7 +98,7 @@ export function LoginForm({ redirectTo, reason, mode = "client" }: LoginFormProp
         <p className="text-sm text-[#6B7280]">
           {mode === "admin"
             ? "Inicia sesión con tu correo corporativo Terrazea y la contraseña asignada por Operaciones."
-            : "Accede con tu correo y contraseña, o introduce el código TRZ de tu proyecto para entrar directamente."}
+            : "Ya tienes cuenta: entra con tu correo y contraseña. ¿Primera vez? Usa el código TRZ que te hemos enviado por correo para activarla."}
         </p>
         {helper ? <p className="text-sm font-medium text-[#C05621]">{helper}</p> : null}
       </div>
@@ -141,9 +144,17 @@ export function LoginForm({ redirectTo, reason, mode = "client" }: LoginFormProp
           </div>
 
           <div className="space-y-2">
-            <label htmlFor="password" className="block text-sm font-medium text-[#2F4F4F]">
-              Contraseña
-            </label>
+            <div className="flex items-center justify-between">
+              <label htmlFor="password" className="block text-sm font-medium text-[#2F4F4F]">
+                Contraseña
+              </label>
+              <Link
+                to="/forgot-password"
+                className="text-xs font-semibold text-[#2F4F4F] hover:underline"
+              >
+                ¿Olvidaste tu contraseña?
+              </Link>
+            </div>
             <input
               id="password"
               type="password"
@@ -170,7 +181,8 @@ export function LoginForm({ redirectTo, reason, mode = "client" }: LoginFormProp
             className="w-full rounded-[1rem] border border-[#E8E6E0] bg-white px-4 py-3 text-sm text-[#2F4F4F] transition focus:border-[#2F4F4F] focus:outline-none focus:ring-2 focus:ring-[#2F4F4F]/10"
           />
           <p className="text-xs text-[#6B7280]">
-            Lo encontrarás en tus comunicaciones o documentación Terrazea. Te llevará directamente a tu proyecto.
+            Usa el código que recibiste por correo al abrirse tu proyecto. Solo es válido para activar tu cuenta la
+            primera vez: después crearás tu contraseña y entrarás siempre con tu correo.
           </p>
         </div>
       )}
@@ -188,7 +200,7 @@ export function LoginForm({ redirectTo, reason, mode = "client" }: LoginFormProp
         ) : loginMode === "email" ? (
           mode === "admin" ? "Entrar al portal Terrazea" : "Acceder con correo y contraseña"
         ) : (
-          "Acceder con código de proyecto"
+          "Activar cuenta con código Terrazea"
         )}
       </button>
 
@@ -209,7 +221,9 @@ export function LoginForm({ redirectTo, reason, mode = "client" }: LoginFormProp
           <span>
             {mode === "admin"
               ? "Solo el equipo Terrazea puede acceder. Si necesitas ayuda, contacta con Operaciones."
-              : "Usa el mismo correo que registramos en tu proyecto o tu código TRZ para entrar de forma segura."}
+              : loginMode === "code"
+                ? "Tras activar tu cuenta con el código, crearás una contraseña personal y el código quedará deshabilitado."
+                : "Usa el correo que registramos en tu proyecto. Si aún no has activado tu cuenta, cambia a la opción de código."}
           </span>
         )}
       </div>

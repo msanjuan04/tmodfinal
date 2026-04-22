@@ -14,6 +14,8 @@ export function LoginPage() {
 
   const target = (searchParams.get("target") ?? "client").toLowerCase() === "admin" ? "admin" : "client"
   const forceLogin = searchParams.get("fresh") === "1"
+  const initialLoginMode: "email" | "code" =
+    (searchParams.get("mode") ?? "").toLowerCase() === "code" ? "code" : "email"
   const redirectTo = useMemo(
     () => searchParams.get("redirect") ?? (target === "admin" ? "/dashboard" : "/client/dashboard"),
     [searchParams, target],
@@ -91,7 +93,12 @@ export function LoginPage() {
             </div>
 
             <div className="flex-1 rounded-[1.75rem] border border-[#E8E6E0] bg-white p-8 shadow-apple-md">
-              <LoginForm redirectTo={redirectTo} reason={reason} mode={target} />
+              <LoginForm
+                redirectTo={redirectTo}
+                reason={reason}
+                mode={target}
+                initialLoginMode={initialLoginMode}
+              />
             </div>
           </div>
         </div>

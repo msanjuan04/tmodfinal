@@ -11,6 +11,7 @@ import type {
   AdminClientStats,
   AdminClientTeamMember,
 } from "@app/types/admin"
+import { sendEmailChangeNoticeEmail } from "../../server/services/email"
 
 const DEFAULT_PAGE_SIZE = 20
 
@@ -224,9 +225,18 @@ export async function getAdminClientDetail(clientId: string): Promise<AdminClien
   }))
 
   const totalProjects = projects.length
-  const activeProjects = projects.filter((project) => project.status === "en_progreso" || project.status === "activo").length
-  const pausedProjects = projects.filter((project) => project.status === "pausado").length
-  const completedProjects = projects.filter((project) => project.status === "finalizado" || project.status === "completado").length
+  // Flujo canónico: "activos" son las fases intermedias (diseño → ejecución),
+  // "completados" el cierre. Ya no existe concepto de pausado en el enum;
+  // devolvemos 0 hasta que decidamos añadirlo como metadato separado.
+  const activeProjects = projects.filter(
+    (project) =>
+      project.status === "diseno" ||
+      project.status === "presupuesto" ||
+      project.status === "planificacion" ||
+      project.status === "obra_ejecucion",
+  ).length
+  const pausedProjects = 0
+  const completedProjects = projects.filter((project) => project.status === "cierre").length
   const lastProject = projects[0] ?? null
 
   const notes: AdminClientNote[] = noteRows.map((row) => ({
@@ -354,6 +364,21 @@ export async function updateAdminClientRecord(clientId: string, payload: Partial
     updated_at: new Date().toISOString(),
   }
 
+  // Capturamos email y nombre previos para detectar cambios y avisar al correo
+  // antiguo (mitiga secuestros de cuenta). Solo consultamos si el payload
+  // intenta tocar el email.
+  let previousEmail: string | null = null
+  let previousFullName: string | null = null
+  if (payload.email !== undefined) {
+    const { data: existing } = await supabase
+      .from("clients")
+      .select("email, full_name")
+      .eq("id", clientId)
+      .maybeSingle()
+    previousEmail = existing?.email ?? null
+    previousFullName = existing?.full_name ?? null
+  }
+
   if (payload.fullName !== undefined) update.full_name = payload.fullName
   if (payload.email !== undefined) update.email = payload.email
   if (payload.phone !== undefined) update.phone = payload.phone
@@ -368,6 +393,41 @@ export async function updateAdminClientRecord(clientId: string, payload: Partial
 
   const { error } = await supabase.from("clients").update(update).eq("id", clientId)
   if (error) throw error
+
+  // Propagamos el cambio de email a app_users para que el login siga
+  // funcionando. Si no existe fila en app_users (cliente sin acceso) no pasa
+  // nada: el update afecta a 0 filas.
+  if (
+    payload.email !== undefined &&
+    previousEmail &&
+    payload.email &&
+    payload.email.toLowerCase() !== previousEmail.toLowerCase()
+  ) {
+    const newEmail = payload.email.toLowerCase()
+    const { error: appUsersError } = await supabase
+      .from("app_users")
+      .update({ email: newEmail })
+      .eq("email", previousEmail.toLowerCase())
+    if (appUsersError) {
+      console.error("[client-update] no se pudo propagar el email a app_users", appUsersError)
+    }
+
+    // Fire-and-forget: avisamos al correo antiguo para que pueda detectar un
+    // cambio no autorizado. El nuevo correo ya verá el cambio al iniciar
+    // sesión.
+    void (async () => {
+      try {
+        await sendEmailChangeNoticeEmail({
+          to: previousEmail!,
+          name: previousFullName ?? "Cliente Terrazea",
+          newEmail,
+          changedAt: new Date().toISOString(),
+        })
+      } catch (emailError) {
+        console.error("[client-update] fallo avisando del cambio de email", emailError)
+      }
+    })()
+  }
 }
 
 export async function deleteAdminClientRecord(clientId: string) {

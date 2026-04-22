@@ -1,9 +1,7 @@
 import { Buffer } from "node:buffer"
-import { randomBytes } from "node:crypto"
 import { Router } from "express"
 import { z } from "zod"
 import type { SupabaseClient } from "@supabase/supabase-js"
-import bcrypt from "bcryptjs"
 
 import { getAdminClientsOverview } from "../../lib/supabase/admin-data"
 import { createClientDocumentRecord } from "../../lib/supabase/admin-clients"
@@ -81,7 +79,7 @@ import {
 } from "../../lib/supabase/admin-payments"
 import { ensureStripeCustomer, createCheckoutSessionForPayment } from "../../lib/payments/stripe"
 import { env } from "../config/env"
-import { sendClientWelcomeEmail, sendDocumentSharedEmail, sendNewClientProjectEmail, sendPaymentRequestEmail } from "../services/email"
+import { sendClientWelcomeEmail, sendDocumentSharedEmail, sendPaymentRequestEmail } from "../services/email"
 import { createProjectNotification, listAdminNotifications, markAdminNotificationRead } from "../../lib/supabase/notifications"
 import {
   createBudgetProduct,
@@ -142,7 +140,7 @@ const createProjectSchema = z.object({
     .string()
     .max(80)
     .optional()
-    .transform((value) => (value && value.trim().length > 0 ? value.trim() : "en_progreso")),
+    .transform((value) => (value && value.trim().length > 0 ? value.trim() : "inicial")),
   startDate: z
     .string()
     .optional()
@@ -302,7 +300,6 @@ interface EnsureClientAppUserResult {
   clientId: string
   clientEmail: string
   clientName: string
-  temporaryPassword?: string
   projectCode?: string | null
 }
 
@@ -329,12 +326,11 @@ async function ensureClientAppUser(
 
     const email = client.email.trim().toLowerCase()
     const fullName = client.full_name?.trim() ?? "Cliente Terrazea"
-    let temporaryPassword: string | undefined
     let shouldInvite = false
 
     const { data: existingUser, error: userError } = await supabase
       .from("app_users")
-      .select("id, is_active, must_update_password")
+      .select("id, is_active, must_update_password, password_hash")
       .eq("email", email)
       .maybeSingle()
 
@@ -344,12 +340,12 @@ async function ensureClientAppUser(
     }
 
     if (!existingUser) {
-      temporaryPassword = randomBytes(12).toString("base64url")
-      const passwordHash = await bcrypt.hash(temporaryPassword, 10)
+      // Creamos la cuenta sin contraseña. El cliente la definirá él mismo tras
+      // entrar con el código Terrazea. Así los admins nunca conocen la clave.
       const { error: insertError } = await supabase.from("app_users").insert({
         email,
         full_name: fullName,
-        password_hash: passwordHash,
+        password_hash: null,
         role: "client",
         must_update_password: true,
         is_active: true,
@@ -390,7 +386,6 @@ async function ensureClientAppUser(
       clientId: client.id,
       clientEmail: email,
       clientName: fullName,
-      temporaryPassword,
       projectCode: options.projectCode ?? null,
     }
   } catch (error) {
@@ -1137,12 +1132,11 @@ router.post(
 
       const ensured = await ensureClientAppUser(supabase, data.id, { projectCode: null })
       if (ensured?.shouldInvite) {
-        const portalUrl = `${clientPortalBaseUrl()}/client/setup-password`
+        const portalUrl = `${clientPortalBaseUrl()}/login?mode=code`
         try {
           await sendClientWelcomeEmail({
             to: ensured.clientEmail,
             name: ensured.clientName,
-            temporaryPassword: ensured.temporaryPassword,
             projectCode: ensured.projectCode,
             forceSend: true,
           })
@@ -1481,7 +1475,7 @@ router.post(
         slug: data.slug,
         clientId,
         code: data.code ?? null,
-        status: data.status ?? "en_progreso",
+        status: data.status ?? "inicial",
         startDate: data.startDate ?? null,
         estimatedDelivery: data.estimatedDelivery ?? null,
         locationCity: data.locationCity ?? null,
@@ -1491,31 +1485,19 @@ router.post(
         assignments,
       })
 
-      if (createdNewClient && newClientContact) {
-        try {
-          await sendNewClientProjectEmail({
-            to: newClientContact.email,
-            name: newClientContact.name,
-            projectName: project.name,
-            projectCode: project.code,
-            forceSend: true,
-          })
-        } catch (emailError) {
-          console.error("[email] No se pudo enviar el aviso del nuevo proyecto al cliente", emailError)
-        }
-      }
-
       const ensured = await ensureClientAppUser(supabase, clientId, { projectCode: project.code })
       const shouldInviteClient = Boolean(ensured && (ensured.shouldInvite || createdNewClient))
       const shouldForceClientInvite = Boolean(ensured?.shouldInvite || createdNewClient)
       if (shouldInviteClient && ensured) {
-        const portalUrl = `${clientPortalBaseUrl()}/client/setup-password`
+        const portalUrl = `${clientPortalBaseUrl()}/login?mode=code`
         try {
+          // Un único correo: bienvenida + código + nombre del proyecto. Así el
+          // cliente no recibe dos mensajes casi simultáneos.
           await sendClientWelcomeEmail({
             to: ensured.clientEmail,
             name: ensured.clientName,
-            temporaryPassword: ensured.temporaryPassword,
             projectCode: ensured.projectCode,
+            projectName: project.name,
             forceSend: shouldForceClientInvite,
           })
         } catch (emailError) {
@@ -1629,7 +1611,9 @@ router.post(
   asyncHandler(async (request, response) => {
     requireAdminSession(request)
     const { projectId } = request.params
-    await updateAdminProjectBasics(projectId, { status: "en_progreso" })
+    // Al restaurar un proyecto archivado, lo devolvemos a ejecución — es el
+    // estado activo dentro del flujo canónico.
+    await updateAdminProjectBasics(projectId, { status: "obra_ejecucion" })
     response.json({ message: "Proyecto restaurado" })
   }),
 )

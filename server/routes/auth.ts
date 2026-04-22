@@ -14,6 +14,12 @@ import {
 } from "../services/session"
 import { asyncHandler } from "../utils/async-handler"
 import { createServerSupabaseClient } from "../../lib/supabase/server"
+import { consumePasswordResetToken, issuePasswordResetToken } from "../services/password-reset"
+import {
+  sendAccountActivatedEmail,
+  sendPasswordResetEmail,
+} from "../services/email"
+import { env } from "../config/env"
 
 const router = Router()
 
@@ -119,7 +125,109 @@ router.post(
     const updatedSession = { ...session, mustUpdatePassword: false }
     setSessionCookie(response, updatedSession)
 
+    // Correo de confirmación de activación (no bloquea la respuesta).
+    if (session.email) {
+      void (async () => {
+        try {
+          await sendAccountActivatedEmail({
+            to: session.email,
+            name: session.name ?? session.email.split("@")[0],
+            activatedAt: new Date().toISOString(),
+          })
+        } catch (emailError) {
+          console.error("[email] No se pudo enviar la confirmación de activación", emailError)
+        }
+      })()
+    }
+
     response.json({ success: true, message: "Contraseña creada correctamente." })
+  }),
+)
+
+router.post(
+  "/forgot-password",
+  asyncHandler(async (request, response) => {
+    const { email } = request.body as { email?: string }
+    const normalizedEmail = email?.trim().toLowerCase() ?? ""
+
+    // Siempre devolvemos el mismo mensaje para no filtrar qué correos están
+    // registrados (email enumeration). El cliente final ve "te hemos enviado
+    // un correo si existe una cuenta".
+    const neutralMessage =
+      "Si el correo corresponde a una cuenta Terrazea, te hemos enviado un enlace para restablecer la contraseña."
+
+    if (!normalizedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      response.json({ success: true, message: neutralMessage })
+      return
+    }
+
+    try {
+      const issued = await issuePasswordResetToken(normalizedEmail)
+      if (issued) {
+        const resetUrl = `${env.clientAppUrl.replace(/\/$/, "")}/reset-password?token=${encodeURIComponent(issued.rawToken)}`
+        try {
+          await sendPasswordResetEmail({
+            to: issued.email,
+            name: issued.fullName,
+            resetUrl,
+            expiresAt: issued.expiresAt,
+            forceSend: true,
+          })
+        } catch (emailError) {
+          console.error("[email] No se pudo enviar el correo de reset", emailError)
+        }
+      }
+    } catch (error) {
+      console.error("[auth] Error emitiendo token de reset", error)
+    }
+
+    response.json({ success: true, message: neutralMessage })
+  }),
+)
+
+router.post(
+  "/reset-password",
+  asyncHandler(async (request, response) => {
+    const { token, password } = request.body as { token?: string; password?: string }
+    const rawToken = token?.trim() ?? ""
+    const sanitized = password?.trim() ?? ""
+
+    if (!rawToken) {
+      response.status(400).json({ success: false, message: "Falta el token de restablecimiento." })
+      return
+    }
+    if (sanitized.length < 8) {
+      response.status(400).json({ success: false, message: "La contraseña debe tener al menos 8 caracteres." })
+      return
+    }
+
+    const result = await consumePasswordResetToken(rawToken, sanitized)
+    if (!result.ok) {
+      const reasonMessage: Record<typeof result.reason, string> = {
+        invalid: "El enlace no es válido. Solicita uno nuevo.",
+        expired: "El enlace ha caducado. Solicita uno nuevo desde la pantalla de acceso.",
+        used: "Este enlace ya se utilizó. Solicita otro si necesitas cambiarla de nuevo.",
+        weak: "La contraseña debe tener al menos 8 caracteres.",
+        error: "No hemos podido actualizar la contraseña. Inténtalo más tarde.",
+      }
+      response.status(400).json({ success: false, message: reasonMessage[result.reason] })
+      return
+    }
+
+    // Correo de confirmación (no bloquea la respuesta).
+    void (async () => {
+      try {
+        await sendAccountActivatedEmail({
+          to: result.consumed.email,
+          name: result.consumed.fullName,
+          activatedAt: new Date().toISOString(),
+        })
+      } catch (emailError) {
+        console.error("[email] No se pudo enviar la confirmación tras reset", emailError)
+      }
+    })()
+
+    response.json({ success: true, message: "Contraseña actualizada. Ya puedes iniciar sesión." })
   }),
 )
 

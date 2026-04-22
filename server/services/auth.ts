@@ -73,6 +73,10 @@ export async function loginWithEmailAndPassword(email: string, password: string)
       })
     | null = null
   let matchedEmail = normalizedEmail
+  // Si encontramos el correo pero la cuenta aún no tiene contraseña, queremos
+  // indicarle al cliente que debe activarla primero con su código Terrazea, en
+  // lugar de devolver "correo no encontrado".
+  let foundEmailWithoutPassword = false
 
   if (supabase) {
     for (const candidate of resolveAdminLoginCandidates(normalizedEmail)) {
@@ -88,7 +92,11 @@ export async function loginWithEmailAndPassword(email: string, password: string)
           return { result: { success: false, message: "No hemos podido iniciar sesión. Inténtalo de nuevo." } }
         }
 
-        if (data && data.is_active !== false && data.password_hash) {
+        if (data && data.is_active !== false) {
+          if (!data.password_hash) {
+            foundEmailWithoutPassword = true
+            continue
+          }
           const matches = bcrypt.compareSync(sanitizedPassword, data.password_hash)
           if (matches) {
             user = data as typeof user
@@ -106,6 +114,16 @@ export async function loginWithEmailAndPassword(email: string, password: string)
   if (!user) {
     if (!supabase) {
       return { result: { success: false, message: "Servicio no disponible. Inténtalo en unos minutos." } }
+    }
+
+    if (foundEmailWithoutPassword) {
+      return {
+        result: {
+          success: false,
+          message:
+            "Aún no has activado tu cuenta. Entra por primera vez con el código Terrazea que te hemos enviado por correo y crea tu contraseña.",
+        },
+      }
     }
 
     return { result: { success: false, message: "No encontramos este correo en Terrazea. ¿Lo has escrito bien?" } }
@@ -268,6 +286,18 @@ export async function loginWithProjectCode(projectCode: string): Promise<AuthSuc
 
   const clientEmail = project.clients.email
   const clientNeedsPassword = project.clients.password_initialized === false
+
+  // El código Terrazea solo sirve para la activación inicial. Una vez el cliente
+  // ha creado su contraseña, tiene que entrar siempre con correo y contraseña.
+  if (!clientNeedsPassword) {
+    return {
+      result: {
+        success: false,
+        message:
+          "Este código ya se ha utilizado para activar la cuenta. Entra con tu correo y contraseña.",
+      },
+    }
+  }
   let user: {
     id: string
     email: string

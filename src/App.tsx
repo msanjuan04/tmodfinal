@@ -4,6 +4,8 @@ import { ClientLayout } from "./routes/client/ClientLayout"
 import { ClientDashboardPage } from "./routes/client/Dashboard"
 import { ClientPasswordSetupPage } from "./routes/client/SetupPassword"
 import { LoginPage } from "./routes/login/LoginPage"
+import { ForgotPasswordPage } from "./routes/login/ForgotPasswordPage"
+import { ResetPasswordPage } from "./routes/login/ResetPasswordPage"
 import { RequireAuth } from "./routes/common/RequireAuth"
 import { ClientProjectsPage } from "./routes/client/Projects"
 import { ClientCalendarPage } from "./routes/client/Calendar"
@@ -29,6 +31,8 @@ export default function App() {
     <Routes>
       <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route
         path="/client/setup-password"
         element={

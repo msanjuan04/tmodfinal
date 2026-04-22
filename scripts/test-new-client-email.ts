@@ -1,5 +1,9 @@
-import { sendNewClientProjectEmail } from "../server/services/email"
+import { sendClientWelcomeEmail } from "../server/services/email"
 import { env } from "../server/config/env"
+
+// Smoke test del correo unificado de bienvenida (welcome + alta de proyecto).
+// Envía un correo real a `to` con un proyecto ficticio, respetando dry-run si
+// está activado; usa `forceSend: true` para saltárselo.
 
 async function main() {
   const to = "marcsanjuansard@gmail.com"
@@ -14,11 +18,11 @@ async function main() {
   console.log("API Key presente:", env.resend.apiKey ? "Sí" : "No")
   console.log("")
 
-  console.log(`Enviando correo de cliente nuevo a ${to}...`)
+  console.log(`Enviando correo de bienvenida unificado a ${to}...`)
   console.log(`Proyecto: ${projectName} (${projectCode})`)
 
   try {
-    const result = await sendNewClientProjectEmail({
+    const result = await sendClientWelcomeEmail({
       to,
       name,
       projectName,
@@ -41,4 +45,3 @@ main().catch((error) => {
   console.error("Error:", error)
   process.exitCode = 1
 })
-
