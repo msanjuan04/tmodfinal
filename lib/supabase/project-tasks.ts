@@ -19,6 +19,8 @@ type ProjectTaskRow = {
   start_date: string | null
   due_date: string | null
   position: number | null
+  is_milestone: boolean | null
+  show_in_calendar: boolean | null
   created_at: string
   updated_at: string
 }
@@ -38,6 +40,10 @@ type TaskCalendarSnapshot = {
   description: string | null
   start_date: string | null
   due_date: string | null
+  is_milestone: boolean
+  show_in_calendar: boolean
+  /** Estado de la tarea en el momento del sync (para reflejarlo en el calendario) */
+  status?: string
 }
 
 export interface ProjectTask {
@@ -52,6 +58,8 @@ export interface ProjectTask {
   startDate: string | null
   dueDate: string | null
   position: number
+  isMilestone: boolean
+  showInCalendar: boolean
   createdAt: string
   updatedAt: string
 }
@@ -107,6 +115,8 @@ const taskWriteSchema = z.object({
   startDate: z.string().nullable().optional(),
   dueDate: z.string().nullable().optional(),
   position: z.number().optional(),
+  isMilestone: z.boolean().optional(),
+  showInCalendar: z.boolean().optional(),
 })
 
 const taskUpdateSchema = taskWriteSchema.partial().extend({
@@ -149,6 +159,15 @@ async function syncTaskCalendarEvents(
   snapshot: TaskCalendarSnapshot,
   actorId: string | null,
 ) {
+  // Si la tarea no debe verse en calendario, limpiamos cualquier evento previo.
+  if (!snapshot.show_in_calendar) {
+    await deleteTaskCalendarEvents(supabase, snapshot.id)
+    return
+  }
+
+  const milestonePrefix = snapshot.is_milestone ? "Hito" : null
+  const isDone = snapshot.status === "done"
+
   const upsertTaskEvent = async (kind: "start" | "end", date: string | null) => {
     const iso = calendarIsoFromDate(date, kind === "start" ? 8 : 17)
     const eventId = deriveTaskEventId(snapshot.id, kind)
@@ -158,23 +177,46 @@ async function syncTaskCalendarEvents(
       return
     }
 
-    const { error } = await supabase
-      .from("project_events")
-      .upsert(
-        {
-          id: eventId,
-          project_id: snapshot.project_id,
-          title: `${kind === "start" ? "Inicio" : "Entrega"} tarea: ${snapshot.title}`,
-          description: snapshot.description ?? null,
-          event_type: kind === "start" ? "task_start" : "task_due",
-          starts_at: iso,
-          ends_at: null,
-          is_all_day: true,
-          visibility: "client_visible",
-          ...(actorId ? { created_by: actorId } : {}),
-        },
-        { onConflict: "id" },
+    const baseLabel = kind === "start" ? "Inicio" : "Entrega"
+    const labelCore = milestonePrefix ? `${milestonePrefix} · ${baseLabel}` : baseLabel
+    const label = isDone ? `✓ ${labelCore}` : labelCore
+
+    // Si la tarea está marcada como hecha, añadimos sufijo `_done` al event_type.
+    // El calendario usa esto para tachar y cambiar el color del evento (estilo completada).
+    let eventType: string = snapshot.is_milestone
+      ? kind === "start"
+        ? "task_milestone_start"
+        : "task_milestone_due"
+      : kind === "start"
+        ? "task_start"
+        : "task_due"
+    if (isDone) eventType = `${eventType}_done`
+
+    const baseRecord = {
+      id: eventId,
+      project_id: snapshot.project_id,
+      title: `${label} tarea: ${snapshot.title}`,
+      description: snapshot.description ?? null,
+      event_type: eventType,
+      starts_at: iso,
+      ends_at: null,
+      is_all_day: true,
+      visibility: "client_visible",
+      task_id: snapshot.id,
+      ...(actorId ? { created_by: actorId } : {}),
+    }
+
+    let { error } = await supabase.from("project_events").upsert(baseRecord, { onConflict: "id" })
+
+    // Si la columna task_id aún no existe en la BD, reintentamos sin ella para no romper.
+    if (error && (error.code === "42703" || (error.message ?? "").toLowerCase().includes("task_id"))) {
+      console.warn(
+        "[calendar-sync] Columna project_events.task_id no encontrada. Aplica la migración SQL para habilitar la edición de tareas desde el calendario.",
       )
+      const { task_id: _ignored, ...fallback } = baseRecord
+      const retry = await supabase.from("project_events").upsert(fallback, { onConflict: "id" })
+      error = retry.error ?? null
+    }
 
     if (error) throw error
   }
@@ -244,7 +286,8 @@ export async function listProjectTasks(projectId: string, filters: ListProjectTa
   const supabase = createServerSupabaseClient()
 
   const page = Math.max(filters.page ?? 1, 1)
-  const pageSize = Math.min(Math.max(filters.pageSize ?? 20, 5), 100)
+  // Subido de 100 → 2000 para que los proyectos con muchas tareas las muestren todas sin paginar.
+  const pageSize = Math.min(Math.max(filters.pageSize ?? 500, 5), 2000)
   const from = (page - 1) * pageSize
   const to = from + pageSize - 1
 
@@ -262,6 +305,8 @@ export async function listProjectTasks(projectId: string, filters: ListProjectTa
         "start_date",
         "due_date",
         "position",
+        "is_milestone",
+        "show_in_calendar",
         "created_at",
         "updated_at",
       ].join(","),
@@ -337,6 +382,8 @@ export async function listProjectTasks(projectId: string, filters: ListProjectTa
       startDate: row.start_date ?? null,
       dueDate: row.due_date ?? null,
       position: Number(row.position ?? 0),
+      isMilestone: row.is_milestone === true,
+      showInCalendar: row.show_in_calendar !== false,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     }))
@@ -405,6 +452,9 @@ export async function createProjectTask(projectId: string, payload: unknown, act
   const supabase = createServerSupabaseClient()
   const parsed = parseTaskWritePayload(payload)
 
+  const resolvedIsMilestone = parsed.isMilestone ?? false
+  const resolvedShowInCalendar = parsed.showInCalendar ?? true
+
   const insertPayload = {
     project_id: projectId,
     title: parsed.title,
@@ -415,6 +465,8 @@ export async function createProjectTask(projectId: string, payload: unknown, act
     start_date: parsed.startDate ?? null,
     due_date: parsed.dueDate ?? null,
     position: parsed.position ?? Date.now(),
+    is_milestone: resolvedIsMilestone,
+    show_in_calendar: resolvedShowInCalendar,
     created_by: actorId,
     updated_by: actorId,
   }
@@ -461,6 +513,9 @@ export async function createProjectTask(projectId: string, payload: unknown, act
       description: parsed.description ?? null,
       start_date: parsed.startDate ?? null,
       due_date: parsed.dueDate ?? null,
+      is_milestone: resolvedIsMilestone,
+      show_in_calendar: resolvedShowInCalendar,
+      status: parsed.status,
     },
     effectiveActorId,
   )
@@ -479,7 +534,9 @@ export async function updateProjectTask(taskId: string, payload: unknown, actorI
 
   const { data: existing, error: fetchError } = await supabase
     .from("project_tasks")
-    .select("project_id, status, weight, title, description, start_date, due_date")
+    .select(
+      "project_id, status, weight, title, description, start_date, due_date, is_milestone, show_in_calendar",
+    )
     .eq("id", taskId)
     .maybeSingle()
 
@@ -498,6 +555,8 @@ export async function updateProjectTask(taskId: string, payload: unknown, actorI
     start_date: parsed.startDate,
     due_date: parsed.dueDate,
     position: parsed.position,
+    is_milestone: parsed.isMilestone,
+    show_in_calendar: parsed.showInCalendar,
     updated_by: actorId,
     updated_at: new Date().toISOString(),
   }
@@ -538,6 +597,15 @@ export async function updateProjectTask(taskId: string, payload: unknown, actorI
     start_date:
       updatePayload.start_date !== undefined ? updatePayload.start_date ?? null : existing.start_date ?? null,
     due_date: updatePayload.due_date !== undefined ? updatePayload.due_date ?? null : existing.due_date ?? null,
+    is_milestone:
+      updatePayload.is_milestone !== undefined
+        ? Boolean(updatePayload.is_milestone)
+        : existing.is_milestone === true,
+    show_in_calendar:
+      updatePayload.show_in_calendar !== undefined
+        ? Boolean(updatePayload.show_in_calendar)
+        : existing.show_in_calendar !== false,
+    status: updatePayload.status ?? existing.status,
   }
 
   await syncTaskCalendarEvents(supabase, snapshot, effectiveActorId)
@@ -582,6 +650,114 @@ export async function updateProjectTask(taskId: string, payload: unknown, actorI
       })
     }
   }
+}
+
+/**
+ * Devuelve una única tarea por ID, con el nombre del responsable ya resuelto.
+ * Útil para modales de edición desde el calendario.
+ */
+export async function getProjectTask(taskId: string): Promise<ProjectTask | null> {
+  const supabase = createServerSupabaseClient()
+  const { data, error } = await supabase
+    .from("project_tasks")
+    .select(
+      "id, project_id, title, description, status, weight, assignee_id, start_date, due_date, position, is_milestone, show_in_calendar, created_at, updated_at",
+    )
+    .eq("id", taskId)
+    .maybeSingle()
+
+  if (error) {
+    rethrowIfMissingTaskSchema(error)
+    throw error
+  }
+
+  if (!data) return null
+
+  const row = data as ProjectTaskRow
+
+  let assigneeName: string | null = null
+  if (row.assignee_id) {
+    const { data: memberRow, error: memberError } = await supabase
+      .from("team_members")
+      .select("full_name")
+      .eq("id", row.assignee_id)
+      .maybeSingle()
+    if (!memberError) {
+      assigneeName = (memberRow?.full_name as string | undefined) ?? null
+    }
+  }
+
+  return {
+    id: row.id,
+    projectId: row.project_id,
+    title: row.title,
+    description: row.description ?? null,
+    status: (row.status as ProjectTaskStatus) ?? "todo",
+    weight: Number(row.weight ?? 0),
+    assigneeId: row.assignee_id ?? null,
+    assigneeName,
+    startDate: row.start_date ?? null,
+    dueDate: row.due_date ?? null,
+    position: Number(row.position ?? 0),
+    isMilestone: row.is_milestone === true,
+    showInCalendar: row.show_in_calendar !== false,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+/**
+ * Dado un ID de evento del calendario (derivado de una tarea), intenta recuperar
+ * la tarea asociada. Primero consulta por `task_id` (columna explícita).
+ * Si no está presente, hace una búsqueda en las tareas del proyecto comparando
+ * los IDs derivados (backwards compatibility con eventos antiguos).
+ */
+export async function findTaskByEventId(eventId: string): Promise<ProjectTask | null> {
+  const supabase = createServerSupabaseClient()
+
+  // Intento 1: columna task_id explícita
+  const { data: eventRow, error: eventError } = await supabase
+    .from("project_events")
+    .select("id, project_id, task_id, event_type")
+    .eq("id", eventId)
+    .maybeSingle()
+
+  if (eventError) {
+    if (eventError.code === "42703") {
+      // Columna task_id no existe todavía → seguimos con fallback
+    } else if (eventError.code !== "PGRST116") {
+      throw eventError
+    }
+  }
+
+  const linkedTaskId =
+    eventRow && typeof (eventRow as { task_id?: string }).task_id === "string"
+      ? (eventRow as { task_id?: string | null }).task_id
+      : null
+
+  if (linkedTaskId) {
+    return getProjectTask(linkedTaskId)
+  }
+
+  // Fallback: iterar tareas del proyecto y comparar con deriveTaskEventId
+  if (!eventRow?.project_id) return null
+
+  const { data: tasks, error: listError } = await supabase
+    .from("project_tasks")
+    .select("id")
+    .eq("project_id", eventRow.project_id)
+
+  if (listError) return null
+
+  for (const task of tasks ?? []) {
+    const startId = deriveTaskEventId(task.id as string, "start")
+    const endId = deriveTaskEventId(task.id as string, "end")
+    if (startId === eventId || endId === eventId) {
+      return getProjectTask(task.id as string)
+    }
+  }
+
+  return null
 }
 
 export async function deleteProjectTask(taskId: string, actorId: string) {
@@ -693,7 +869,7 @@ export async function reorderProjectTasks(projectId: string, items: ReorderPaylo
     const { data, error } = await supabase
       .from("project_tasks")
       .select(
-        "id, project_id, title, description, status, weight, assignee_id, start_date, due_date, position, created_at, updated_at",
+        "id, project_id, title, description, status, weight, assignee_id, start_date, due_date, position, is_milestone, show_in_calendar, created_at, updated_at",
       )
       .in(
         "id",
@@ -899,7 +1075,7 @@ export async function addTaskToCalendar(taskId: string, actorId: string) {
 
   const { data: task, error } = await supabase
     .from("project_tasks")
-    .select("id, project_id, title, description, start_date, due_date")
+    .select("id, project_id, title, description, start_date, due_date, is_milestone, show_in_calendar, status")
     .eq("id", taskId)
     .maybeSingle()
 
@@ -907,6 +1083,11 @@ export async function addTaskToCalendar(taskId: string, actorId: string) {
   if (!task) throw new Error("Tarea no encontrada")
   if (!task.start_date && !task.due_date) {
     throw new Error("La tarea necesita una fecha de inicio o entrega para sincronizar con el calendario")
+  }
+
+  // Al pulsar "Añadir al calendario" forzamos show_in_calendar a true.
+  if (task.show_in_calendar === false) {
+    await supabase.from("project_tasks").update({ show_in_calendar: true }).eq("id", taskId)
   }
 
   await syncTaskCalendarEvents(
@@ -918,6 +1099,9 @@ export async function addTaskToCalendar(taskId: string, actorId: string) {
       description: task.description ?? null,
       start_date: task.start_date ?? null,
       due_date: task.due_date ?? null,
+      is_milestone: task.is_milestone === true,
+      show_in_calendar: true,
+      status: task.status ?? undefined,
     },
     actorId,
   )

@@ -23,6 +23,22 @@ import {
 import { createAdminClient, fetchAdminClients, type CreateAdminClientPayload } from "@app/lib/api/admin"
 import type { AdminClientOverview } from "@app/types/admin"
 
+// Mapas de estilos y etiquetas para el estado del cliente. Los exportamos
+// porque ClientPage.tsx (detalle) los reutiliza para pintar el mismo badge.
+export const STATUS_BADGES: Record<string, string> = {
+  activo: "bg-[#DCFCE7] text-[#166534]",
+  nuevo: "bg-[#DBEAFE] text-[#1D4ED8]",
+  inactivo: "bg-[#F4F1EA] text-[#6B7280]",
+  con_incidencias: "bg-[#FEE2E2] text-[#B91C1C]",
+}
+
+export const STATUS_LABELS: Record<string, string> = {
+  activo: "Activo",
+  nuevo: "Nuevo",
+  inactivo: "Inactivo",
+  con_incidencias: "Con incidencias",
+}
+
 interface FormState extends CreateAdminClientPayload {
   status: "idle" | "pending" | "success" | "error"
   message?: string

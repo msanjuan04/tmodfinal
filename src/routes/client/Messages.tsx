@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 
 import { Card, CardContent } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
 import { MessagesView } from "@/components/messages-view"
 import { Loader2, MessageSquare } from "lucide-react"
 import { toast } from "sonner"
@@ -10,6 +9,7 @@ import { fetchClientMessages, fetchClientProjects, sendClientMessage } from "@ap
 import type { MessagesData } from "@/lib/supabase/queries"
 import type { ClientProjectSummary } from "@app/types/client"
 import { useAuth } from "@app/context/AuthContext"
+import { ClientPageHeader } from "@/components/client/client-page-header"
 
 export function ClientMessagesPage() {
   const { session } = useAuth()
@@ -106,7 +106,7 @@ export function ClientMessagesPage() {
   if (!loading && projects.length === 0) {
     return (
       <div className="space-y-6 pb-16">
-        <Card className="rounded-[1.5rem] border border-[#E8E6E0] bg-white/80 p-10 shadow-apple-xl">
+        <Card className="rounded-[1.75rem] border border-[#E8E6E0] bg-white/90 p-10 shadow-apple-md">
           <h2 className="font-heading text-2xl font-semibold text-[#2F4F4F]">Conversaciones con tu equipo</h2>
           <p className="mt-2 text-sm text-[#6B7280]">
             Aún no hay proyectos Terrazea vinculados a tu cuenta. En cuanto tengas uno activo, podrás conversar con el equipo desde aquí.
@@ -118,63 +118,33 @@ export function ClientMessagesPage() {
 
   return (
     <div className="space-y-6 pb-16">
-      <Card className="rounded-[1.5rem] border border-[#E8E6E0] bg-white/80 px-6 py-6 shadow-apple-xl">
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <p className="text-xs uppercase tracking-[0.3em] text-[#C6B89E]">Tu proyecto</p>
-              <h1 className="font-heading text-3xl text-[#2F4F4F] lg:text-4xl">Mensajes con Terrazea</h1>
-              <p className="max-w-2xl text-sm text-[#6B7280]">
-                Coordina visitas, resuelve dudas y sigue el avance de tu obra en tiempo real con la misma persona de referencia.
-              </p>
-            </div>
-            {selectedProject ? (
-              <div className="rounded-[1.25rem] border border-[#E8E6E0] bg-[#F8F7F4] px-4 py-3 text-sm text-[#4B5563]">
-                <p className="text-xs uppercase tracking-[0.3em] text-[#C6B89E]">Proyecto activo</p>
-                <div className="mt-2 space-y-1">
-                  <p className="font-medium text-[#2F4F4F]">{selectedProject.name}</p>
-                  {selectedProject.code ? <p className="text-xs text-[#6B7280]">Código: {selectedProject.code}</p> : null}
-                </div>
-              </div>
-            ) : null}
-            {primaryContact ? (
-              <div className="rounded-[1.25rem] border border-[#E8E6E0] bg-white px-4 py-3 text-sm text-[#4B5563]">
-                <p className="text-xs uppercase tracking-[0.3em] text-[#C6B89E]">Tu project manager asignado</p>
-                <div className="mt-2 space-y-1 text-[#2F4F4F]">
-                  <p className="font-medium">{primaryContact.name}</p>
-                  {primaryContact.role ? <p className="text-xs text-[#6B7280]">{primaryContact.role}</p> : null}
-                </div>
-              </div>
-            ) : null}
-          </div>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <select
-              className="w-full min-w-[240px] rounded-full border border-[#E8E6E0] bg-[#F8F7F4] px-5 py-2 text-sm text-[#2F4F4F] focus:outline-none focus:ring-2 focus:ring-[#2F4F4F]/20"
-              value={selectedSlug ?? ""}
-              onChange={(event) => setSelectedSlug(event.target.value || null)}
-              disabled={projects.length === 0}
-            >
-              <option value="">{projects.length === 0 ? "Sin proyectos disponibles" : "Selecciona un proyecto"}</option>
-              {projects.map((project) => (
-                <option key={project.slug} value={project.slug}>
-                  {project.name}
-                </option>
-              ))}
-            </select>
-            <Button
-              variant="outline"
-              className="inline-flex items-center gap-2 rounded-full border-[#E8E6E0] px-5 py-2 text-[#2F4F4F] hover:bg-[#F4F1EA]"
-              onClick={() => {
-                void handleManualRefresh()
-              }}
-              disabled={!selectedSlug || loading}
-            >
-              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageSquare className="h-4 w-4" />}
-              {loading ? "Actualizando" : "Actualizar"}
-            </Button>
-          </div>
+      <ClientPageHeader
+        overline="Comunicación"
+        title="Mensajes con Terrazea"
+        description="Coordina visitas, resuelve dudas y sigue el avance de tu obra en tiempo real con tu persona de referencia."
+        icon={MessageSquare}
+        projects={projects}
+        selectedSlug={selectedSlug}
+        onSelectedSlugChange={setSelectedSlug}
+        onRefresh={() => void handleManualRefresh()}
+        refreshing={loading}
+      >
+        <div className="flex flex-wrap gap-2 pt-1">
+          {selectedProject ? (
+            <span className="inline-flex items-center gap-2 rounded-full border border-[#E8E6E0] bg-[#F8F7F4] px-3 py-1 text-xs text-[#4B5563]">
+              <span className="font-semibold text-[#2F4F4F]">{selectedProject.name}</span>
+              {selectedProject.code ? <span className="text-[#9CA3AF]">· {selectedProject.code}</span> : null}
+            </span>
+          ) : null}
+          {primaryContact ? (
+            <span className="inline-flex items-center gap-2 rounded-full border border-[#E8E6E0] bg-[#F8F7F4] px-3 py-1 text-xs text-[#4B5563]">
+              <span className="font-semibold text-[#2F4F4F]">PM:</span>
+              <span>{primaryContact.name}</span>
+              {primaryContact.role ? <span className="text-[#9CA3AF]">· {primaryContact.role}</span> : null}
+            </span>
+          ) : null}
         </div>
-      </Card>
+      </ClientPageHeader>
 
       {loading ? (
         <Card className="rounded-[1.25rem] border-[#E8E6E0] bg-white">

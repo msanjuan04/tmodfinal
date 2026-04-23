@@ -2,15 +2,24 @@
 
 import { useEffect, useRef, useState, useTransition } from "react"
 import { format } from "date-fns"
+import { CalendarClock, CalendarDays, FileText, Plus, Tag } from "lucide-react"
 
-import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
+import { Button } from "@/components/ui/button"
 import { createProjectEvent, deleteProjectEvent, updateProjectEvent } from "@app/lib/api/events"
 import type { ProjectEvent, ProjectEventWriteInput } from "@app/types/events"
-import { Plus, Trash2, Calendar } from "lucide-react"
+
+import {
+  CalendarCheckboxRow,
+  CalendarField,
+  CalendarFormFooter,
+  CalendarFormHeader,
+  CalendarFormSection,
+  CALENDAR_INPUT_CLASS,
+  CALENDAR_TEXTAREA_CLASS,
+} from "./calendar-form-primitives"
 
 interface EventFormModalProps {
   projectId: string
@@ -24,10 +33,7 @@ export function EventFormModal({ projectId, event, trigger, onSuccess, defaultDa
   const [isOpen, setIsOpen] = useState(false)
   const [pending, startTransition] = useTransition()
   const [formData, setFormData] = useState<ProjectEventWriteInput>(() => {
-    const baseStart = event?.startsAt
-      ? new Date(event.startsAt)
-      : defaultDate
-
+    const baseStart = event?.startsAt ? new Date(event.startsAt) : defaultDate
     return {
       projectId,
       title: event?.title ?? "",
@@ -57,7 +63,6 @@ export function EventFormModal({ projectId, event, trigger, onSuccess, defaultDa
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
-
     startTransition(() => {
       void (async () => {
         try {
@@ -66,7 +71,6 @@ export function EventFormModal({ projectId, event, trigger, onSuccess, defaultDa
           } else {
             await createProjectEvent(formData)
           }
-
           setIsOpen(false)
           onSuccess?.()
         } catch (error) {
@@ -78,154 +82,149 @@ export function EventFormModal({ projectId, event, trigger, onSuccess, defaultDa
 
   const handleDelete = () => {
     if (!event) return
-    
-    if (confirm("¿Estás seguro de que quieres eliminar este evento?")) {
-      startTransition(() => {
-        void (async () => {
-          try {
-            await deleteProjectEvent(event.id)
-            setIsOpen(false)
-            onSuccess?.()
-          } catch (error) {
-            console.error("Error deleting event:", error)
-          }
-        })()
-      })
-    }
+    if (!confirm("¿Estás seguro de que quieres eliminar este evento?")) return
+    startTransition(() => {
+      void (async () => {
+        try {
+          await deleteProjectEvent(event.id)
+          setIsOpen(false)
+          onSuccess?.()
+        } catch (error) {
+          console.error("Error deleting event:", error)
+        }
+      })()
+    })
   }
 
   const defaultTrigger = (
     <Button variant="outline" size="sm">
-      <Plus className="h-4 w-4 mr-2" />
+      <Plus className="mr-2 h-4 w-4" />
       Nuevo evento
     </Button>
   )
 
   return (
     <Sheet open={isOpen} onOpenChange={setIsOpen}>
-      <SheetTrigger asChild>
-        {trigger || defaultTrigger}
-      </SheetTrigger>
-      <SheetContent side="right" className="w-[400px] sm:w-[540px]">
-        <SheetHeader>
-          <SheetTitle className="flex items-center gap-2">
-            <Calendar className="h-5 w-5" />
-            {isEditing ? "Editar evento" : "Crear evento"}
-          </SheetTitle>
-        </SheetHeader>
-        
-        <form onSubmit={handleSubmit} className="space-y-6 mt-6">
-          <div className="space-y-2">
-            <Label htmlFor="title">Título del evento</Label>
-            <Input
-              id="title"
-              value={formData.title}
-              onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
-              placeholder="Ej: Visita de obra, Entrega de materiales..."
-              required
+      <SheetTrigger asChild>{trigger ?? defaultTrigger}</SheetTrigger>
+      <SheetContent side="right" className="w-full overflow-y-auto p-0 sm:max-w-xl">
+        <div className="flex h-full flex-col bg-[#F8F7F4]">
+          <CalendarFormHeader
+            icon={CalendarDays}
+            overline={isEditing ? "Editar evento" : "Calendario de proyecto"}
+            title={isEditing ? event?.title ?? "Evento" : "Nuevo evento"}
+            description={
+              isEditing
+                ? "Modifica los datos del evento. Los cambios se sincronizan con el cliente si es visible."
+                : "Añade una visita, entrega, reunión o nota interna para este proyecto."
+            }
+          />
+
+          <form onSubmit={handleSubmit} className="flex flex-1 flex-col gap-4 px-6 py-6">
+            <CalendarFormSection title="Información" icon={FileText}>
+              <CalendarField label="Título" required>
+                <Input
+                  value={formData.title}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, title: e.target.value }))}
+                  placeholder="Ej: Visita de obra, Entrega de materiales…"
+                  required
+                  className={CALENDAR_INPUT_CLASS}
+                />
+              </CalendarField>
+              <CalendarField label="Descripción (opcional)">
+                <Textarea
+                  value={formData.description ?? ""}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, description: e.target.value }))}
+                  placeholder="Detalles adicionales del evento…"
+                  rows={3}
+                  className={CALENDAR_TEXTAREA_CLASS}
+                />
+              </CalendarField>
+            </CalendarFormSection>
+
+            <CalendarFormSection title="Tipo y visibilidad" icon={Tag}>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <CalendarField label="Tipo de evento">
+                  <select
+                    value={formData.eventType}
+                    onChange={(e) =>
+                      setFormData((prev) => {
+                        const nextType = e.target.value
+                        if (nextType === "nota_interna" && prev.visibility !== "internal") {
+                          return { ...prev, eventType: nextType, visibility: "internal" }
+                        }
+                        return { ...prev, eventType: nextType }
+                      })
+                    }
+                    className={CALENDAR_INPUT_CLASS}
+                  >
+                    <option value="general">General</option>
+                    <option value="visita_obra">Visita de obra</option>
+                    <option value="logistica">Logística</option>
+                    <option value="administrativo">Administrativo</option>
+                    <option value="interno">Interno</option>
+                    <option value="entrega">Entrega</option>
+                    <option value="nota_interna">Nota interna (solo equipo)</option>
+                  </select>
+                </CalendarField>
+                <CalendarField label="Visibilidad">
+                  <select
+                    value={formData.visibility}
+                    onChange={(e) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        visibility: e.target.value as "client_visible" | "internal",
+                      }))
+                    }
+                    className={CALENDAR_INPUT_CLASS}
+                  >
+                    <option value="client_visible">Visible para cliente</option>
+                    <option value="internal">Solo equipo interno</option>
+                  </select>
+                </CalendarField>
+              </div>
+            </CalendarFormSection>
+
+            <CalendarFormSection title="Fechas y hora" icon={CalendarClock}>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <CalendarField label="Inicio" required>
+                  <Input
+                    type="datetime-local"
+                    value={formData.startsAt}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, startsAt: e.target.value }))}
+                    required
+                    className={CALENDAR_INPUT_CLASS}
+                  />
+                </CalendarField>
+                <CalendarField label="Fin (opcional)">
+                  <Input
+                    type="datetime-local"
+                    value={endsAtValue}
+                    onChange={(e) =>
+                      setFormData((prev) => ({ ...prev, endsAt: e.target.value || null }))
+                    }
+                    className={CALENDAR_INPUT_CLASS}
+                  />
+                </CalendarField>
+              </div>
+              <CalendarCheckboxRow
+                checked={Boolean(formData.isAllDay)}
+                onChange={(value) => setFormData((prev) => ({ ...prev, isAllDay: value }))}
+                icon={<CalendarDays className="h-4 w-4 text-[#2F4F4F]" />}
+                title="Evento de todo el día"
+                description="Reserva el día completo sin hora específica."
+              />
+            </CalendarFormSection>
+
+            <CalendarFormFooter
+              onCancel={() => setIsOpen(false)}
+              submitting={pending}
+              isEditing={isEditing}
+              createLabel="Crear evento"
+              updateLabel="Guardar cambios"
+              onDelete={isEditing ? handleDelete : undefined}
             />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="description">Descripción (opcional)</Label>
-            <Textarea
-              id="description"
-              value={formData.description ?? ""}
-              onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
-              placeholder="Detalles adicionales del evento..."
-              rows={3}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="eventType">Tipo de evento</Label>
-            <select
-              id="eventType"
-              value={formData.eventType}
-              onChange={(e) =>
-                setFormData((prev) => {
-                  const nextType = e.target.value
-                  // Si es una nota interna, forzamos visibilidad interna por defecto
-                  if (nextType === "nota_interna" && prev.visibility !== "internal") {
-                    return { ...prev, eventType: nextType, visibility: "internal" }
-                  }
-                  return { ...prev, eventType: nextType }
-                })
-              }
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:ring-2 focus:ring-ring focus:ring-offset-2"
-            >
-              <option value="general">General</option>
-              <option value="visita_obra">Visita de obra</option>
-              <option value="logistica">Logística</option>
-              <option value="administrativo">Administrativo</option>
-              <option value="interno">Interno</option>
-              <option value="entrega">Entrega</option>
-              <option value="nota_interna">Nota interna (solo equipo)</option>
-            </select>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="startsAt">Fecha y hora de inicio</Label>
-            <Input
-              id="startsAt"
-              type="datetime-local"
-              value={formData.startsAt}
-              onChange={(e) => setFormData(prev => ({ ...prev, startsAt: e.target.value }))}
-              required
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="endsAt">Fecha y hora de fin (opcional)</Label>
-            <Input
-              id="endsAt"
-              type="datetime-local"
-              value={endsAtValue}
-              onChange={(e) => setFormData(prev => ({ ...prev, endsAt: e.target.value || null }))}
-            />
-          </div>
-
-          <div className="flex items-center space-x-2">
-            <input
-              type="checkbox"
-              id="isAllDay"
-              checked={formData.isAllDay}
-              onChange={(e) => setFormData(prev => ({ ...prev, isAllDay: e.target.checked }))}
-              className="rounded border-gray-300"
-            />
-            <Label htmlFor="isAllDay">Evento de todo el día</Label>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="visibility">Visibilidad</Label>
-            <select
-              id="visibility"
-              value={formData.visibility}
-              onChange={(e) => setFormData(prev => ({ ...prev, visibility: e.target.value as "client_visible" | "internal" }))}
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:ring-2 focus:ring-ring focus:ring-offset-2"
-            >
-              <option value="client_visible">Visible para cliente</option>
-              <option value="internal">Solo equipo interno</option>
-            </select>
-          </div>
-
-          <div className="flex gap-3 pt-4">
-            <Button type="submit" disabled={pending} className="flex-1">
-              {pending ? "Guardando..." : isEditing ? "Actualizar evento" : "Crear evento"}
-            </Button>
-            
-            {isEditing && (
-              <Button
-                type="button"
-                variant="destructive"
-                onClick={handleDelete}
-                disabled={pending}
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            )}
-          </div>
-        </form>
+          </form>
+        </div>
       </SheetContent>
     </Sheet>
   )

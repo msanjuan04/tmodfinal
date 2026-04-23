@@ -173,95 +173,99 @@ export function AdminMessagesPage() {
 
   return (
     <div className="space-y-6 pb-16">
-      <Card className="rounded-[1.5rem] border-[#E8E6E0] bg-white px-6 py-6 shadow-sm">
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <p className="text-xs uppercase tracking-[0.3em] text-[#C6B89E]">Comunicación</p>
-              <h1 className="font-heading text-3xl text-[#2F4F4F] lg:text-4xl">Mensajes con el equipo</h1>
-              <p className="max-w-2xl text-sm text-[#6B7280]">
-                Gestiona conversaciones con clientes y colaboradores. Filtra por proyecto para revisar el historial y dar seguimiento a cada hilo.
+      <section className="rounded-[1.75rem] border border-[#E8E6E0] bg-white/95 p-6 shadow-apple-md lg:p-8">
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#F4F1EA] text-[#2F4F4F]">
+                <MessageSquare className="h-4 w-4" />
+              </div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-[#C6B89E]">
+                Comunicación
               </p>
             </div>
-            <div className="grid gap-3 sm:grid-cols-3">
-              <StatPill label="Conversaciones" value={conversationsCount.toString()} helper="Activas en este proyecto" />
-              <StatPill label="Sin leer" value={unreadTotal.toString()} helper="Mensajes pendientes" />
+            <h1 className="font-heading text-3xl font-semibold leading-tight text-[#2F4F4F] sm:text-4xl">
+              Mensajes con el equipo
+            </h1>
+            <p className="max-w-2xl text-sm leading-relaxed text-[#6B7280]">
+              Gestiona conversaciones con clientes y colaboradores. Filtra por proyecto para revisar el historial y dar seguimiento a cada hilo.
+            </p>
+            <div className="flex flex-wrap gap-2 pt-1">
+              <StatPill label="Conversaciones" value={conversationsCount.toString()} helper="Activas" />
+              <StatPill label="Sin leer" value={unreadTotal.toString()} helper="Pendientes" />
               <StatPill label="Última actividad" value={lastActivity} helper="" />
             </div>
             {selectedProject ? (
-              <div className="rounded-[1.25rem] border border-[#E8E6E0] bg-[#F8F7F4] px-4 py-3 text-sm text-[#4B5563]">
-                <p className="text-xs uppercase tracking-[0.3em] text-[#C6B89E]">Proyecto activo</p>
-                <div className="mt-2 space-y-1">
-                  <p className="font-medium text-[#2F4F4F]">{selectedProject.name}</p>
-                  {selectedProject.clientName ? <p className="text-xs text-[#6B7280]">Cliente: {selectedProject.clientName}</p> : null}
-                </div>
+              <div className="inline-flex flex-wrap items-center gap-2 rounded-full border border-[#E8E6E0] bg-[#F8F7F4] px-4 py-1.5 text-xs text-[#4B5563]">
+                <span className="font-semibold text-[#2F4F4F]">{selectedProject.name}</span>
+                {selectedProject.clientName ? (
+                  <span className="text-[#9CA3AF]">· {selectedProject.clientName}</span>
+                ) : null}
               </div>
             ) : null}
           </div>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <select
-              className="w-full min-w-[240px] rounded-full border border-[#E8E6E0] bg-[#F8F7F4] px-5 py-2 text-sm text-[#2F4F4F] focus:outline-none focus:ring-2 focus:ring-[#2F4F4F]/20"
-              value={selectedSlug ?? ""}
-              onChange={(event) => setSelectedSlug(event.target.value || null)}
-            >
-              <option value="">{projectOptions.length === 0 ? "Sin proyectos disponibles" : "Selecciona un proyecto"}</option>
-              {projectOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
+          <div className="flex flex-col gap-2 sm:min-w-[260px]">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <select
+                className="h-10 w-full min-w-[220px] rounded-full border border-[#E8E6E0] bg-[#F8F7F4] px-4 text-sm text-[#2F4F4F] focus:outline-none focus:ring-2 focus:ring-[#2F4F4F]/20"
+                value={selectedSlug ?? ""}
+                onChange={(event) => setSelectedSlug(event.target.value || null)}
+              >
+                <option value="">{projectOptions.length === 0 ? "Sin proyectos disponibles" : "Selecciona un proyecto"}</option>
+                {projectOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <Button
+                variant="outline"
+                className="inline-flex h-10 shrink-0 items-center gap-2 rounded-full border-[#E8E6E0] bg-white px-4 text-xs font-semibold text-[#2F4F4F] hover:bg-[#F4F1EA]"
+                onClick={() => void handleManualRefresh()}
+                disabled={!selectedSlug || loading}
+              >
+                {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <MessageSquare className="h-3.5 w-3.5" />}
+                {loading ? "Actualizando" : "Actualizar"}
+              </Button>
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <select
+                className="h-10 w-full min-w-[220px] rounded-full border border-[#E8E6E0] bg-[#F8F7F4] px-4 text-sm text-[#2F4F4F] focus:outline-none focus:ring-2 focus:ring-[#2F4F4F]/20 disabled:cursor-not-allowed disabled:opacity-60"
+                value={newConversationMemberId}
+                onChange={(event) => setNewConversationMemberId(event.target.value)}
+                disabled={!selectedSlug || availableTeamMembers.length === 0}
+              >
+                <option value="">
+                  {!selectedSlug
+                    ? "Selecciona un proyecto"
+                    : availableTeamMembers.length === 0
+                      ? "Todos ya tienen conversación"
+                      : "Nueva conversación…"}
                 </option>
-              ))}
-            </select>
-            <Button
-              variant="outline"
-              className="inline-flex items-center gap-2 rounded-full border-[#E8E6E0] px-5 py-2 text-[#2F4F4F] hover:bg-[#F4F1EA]"
-              onClick={() => {
-                void handleManualRefresh()
-              }}
-              disabled={!selectedSlug || loading}
-            >
-              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageSquare className="h-4 w-4" />}
-              {loading ? "Actualizando" : "Actualizar"}
-            </Button>
-          </div>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <select
-              className="w-full min-w-[240px] rounded-full border border-[#E8E6E0] bg-[#F8F7F4] px-5 py-2 text-sm text-[#2F4F4F] focus:outline-none focus:ring-2 focus:ring-[#2F4F4F]/20 disabled:cursor-not-allowed disabled:opacity-60"
-              value={newConversationMemberId}
-              onChange={(event) => setNewConversationMemberId(event.target.value)}
-              disabled={!selectedSlug || availableTeamMembers.length === 0}
-            >
-              <option value="">
-                {!selectedSlug
-                  ? "Selecciona un proyecto para comenzar"
-                  : availableTeamMembers.length === 0
-                    ? "Todos los miembros ya tienen conversación"
-                    : "Selecciona un miembro del equipo"}
-              </option>
-              {availableTeamMembers.map((member) => (
-                <option key={member.id} value={member.id}>
-                  {member.name} · {member.role}
-                </option>
-              ))}
-            </select>
-            <Button
-              className="inline-flex items-center gap-2 rounded-full bg-[#2F4F4F] px-5 py-2 text-white hover:bg-[#1F3535]"
-              onClick={() => {
-                void handleCreateConversation()
-              }}
-              disabled={
-                !selectedSlug || !newConversationMemberId || creatingConversation || availableTeamMembers.length === 0
-              }
-            >
-              {creatingConversation ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <MessageSquarePlus className="h-4 w-4" />
-              )}
-              {creatingConversation ? "Creando…" : "Nueva conversación"}
-            </Button>
+                {availableTeamMembers.map((member) => (
+                  <option key={member.id} value={member.id}>
+                    {member.name} · {member.role}
+                  </option>
+                ))}
+              </select>
+              <Button
+                className="inline-flex h-10 shrink-0 items-center gap-2 rounded-full bg-[#2F4F4F] px-4 text-xs font-semibold text-white hover:bg-[#1F3535]"
+                onClick={() => void handleCreateConversation()}
+                disabled={
+                  !selectedSlug || !newConversationMemberId || creatingConversation || availableTeamMembers.length === 0
+                }
+              >
+                {creatingConversation ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <MessageSquarePlus className="h-3.5 w-3.5" />
+                )}
+                {creatingConversation ? "Creando…" : "Nueva"}
+              </Button>
+            </div>
           </div>
         </div>
-      </Card>
+      </section>
 
       {loading ? (
         <Card className="rounded-[1.25rem] border-[#E8E6E0] bg-white">

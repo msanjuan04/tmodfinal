@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { DocumentsView } from "@/components/documents-view"
-import { Loader2, RefreshCw } from "lucide-react"
+import { FileText, Loader2, RefreshCw } from "lucide-react"
 
 import { fetchAdminDocuments } from "@app/lib/api/admin"
 import { listProjectCalendarSummaries } from "@app/lib/api/events"
@@ -70,29 +70,35 @@ export function AdminDocumentsPage() {
 
   return (
     <div className="space-y-6 pb-16">
-      <Card className="rounded-[1.5rem] border-[#E8E6E0] bg-white px-6 py-6 shadow-sm">
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <p className="text-xs uppercase tracking-[0.3em] text-[#C6B89E]">Gestión documental</p>
-              <h1 className="font-heading text-3xl text-[#2F4F4F] lg:text-4xl">Documentación de proyectos</h1>
-              <p className="max-w-2xl text-sm text-[#6B7280]">
-                Revisa planos, certificados y documentación legal en un solo lugar. Selecciona el proyecto para visualizar sus archivos publicados.
+      <section className="rounded-[1.75rem] border border-[#E8E6E0] bg-white/95 p-6 shadow-apple-md lg:p-8">
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#F4F1EA] text-[#2F4F4F]">
+                <FileText className="h-4 w-4" />
+              </div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-[#C6B89E]">
+                Gestión documental
               </p>
             </div>
+            <h1 className="font-heading text-3xl font-semibold leading-tight text-[#2F4F4F] sm:text-4xl">
+              Documentación de proyectos
+            </h1>
+            <p className="max-w-2xl text-sm leading-relaxed text-[#6B7280]">
+              Revisa planos, certificados y documentación legal en un solo lugar. Selecciona el proyecto para visualizar sus archivos publicados.
+            </p>
             {selectedProject ? (
-              <div className="rounded-[1.25rem] border border-[#E8E6E0] bg-[#F8F7F4] px-4 py-3 text-sm text-[#4B5563]">
-                <p className="text-xs uppercase tracking-[0.3em] text-[#C6B89E]">Proyecto activo</p>
-                <div className="mt-2 space-y-1">
-                  <p className="font-medium text-[#2F4F4F]">{selectedProject.name}</p>
-                  {selectedProject.clientName ? <p className="text-xs text-[#6B7280]">Cliente: {selectedProject.clientName}</p> : null}
-                </div>
+              <div className="inline-flex flex-wrap items-center gap-2 rounded-full border border-[#E8E6E0] bg-[#F8F7F4] px-4 py-1.5 text-xs text-[#4B5563]">
+                <span className="font-semibold text-[#2F4F4F]">{selectedProject.name}</span>
+                {selectedProject.clientName ? (
+                  <span className="text-[#9CA3AF]">· {selectedProject.clientName}</span>
+                ) : null}
               </div>
             ) : null}
           </div>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <select
-              className="w-full min-w-[240px] rounded-full border border-[#E8E6E0] bg-[#F8F7F4] px-5 py-2 text-sm text-[#2F4F4F] focus:outline-none focus:ring-2 focus:ring-[#2F4F4F]/20"
+              className="h-10 min-w-[220px] rounded-full border border-[#E8E6E0] bg-[#F8F7F4] px-4 text-sm text-[#2F4F4F] focus:outline-none focus:ring-2 focus:ring-[#2F4F4F]/20"
               value={selectedSlug ?? ""}
               onChange={(event) => setSelectedSlug(event.target.value || null)}
             >
@@ -105,18 +111,18 @@ export function AdminDocumentsPage() {
             </select>
             <Button
               variant="outline"
-              className="inline-flex items-center gap-2 rounded-full border-[#E8E6E0] px-5 py-2 text-[#2F4F4F] hover:bg-[#F4F1EA]"
+              className="inline-flex h-10 items-center gap-2 rounded-full border-[#E8E6E0] bg-white px-4 text-xs font-semibold text-[#2F4F4F] hover:bg-[#F4F1EA]"
               onClick={() => {
                 void handleManualRefresh()
               }}
               disabled={!selectedSlug || loading}
             >
-              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
               {loading ? "Actualizando" : "Actualizar"}
             </Button>
           </div>
         </div>
-      </Card>
+      </section>
 
       {loading ? (
         <Card className="rounded-[1.25rem] border-[#E8E6E0] bg-white">

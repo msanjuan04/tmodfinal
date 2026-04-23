@@ -39,6 +39,14 @@ export interface ProjectNotification {
 export interface NotificationFeed {
   notifications: ProjectNotification[]
   unreadCount: number
+  totalCount?: number
+}
+
+export interface AdminNotificationListOptions {
+  limit?: number
+  offset?: number
+  unreadOnly?: boolean
+  type?: string
 }
 
 const DEFAULT_LIMIT = 20
@@ -111,34 +119,57 @@ export async function listClientNotifications(clientId: string, options?: { limi
   }
 }
 
-export async function listAdminNotifications(options?: { limit?: number }): Promise<NotificationFeed> {
+export async function listAdminNotifications(options?: AdminNotificationListOptions): Promise<NotificationFeed> {
   const limit = normalizeLimit(options?.limit)
+  const offset = Math.max(0, Math.floor(options?.offset ?? 0))
   const supabase = createServerSupabaseClient()
-  const { data, error } = await supabase
+
+  // Query principal — listado paginado con filtros opcionales. Pedimos
+  // count: "exact" para poder paginar desde la UI.
+  let query = supabase
     .from("project_notifications")
-    .select("*")
+    .select("*", { count: "exact" })
     .eq("audience", "admin")
     .order("created_at", { ascending: false })
-    .limit(limit)
+    .range(offset, offset + limit - 1)
 
-  if (error) {
-    throw error
+  if (options?.unreadOnly) {
+    query = query.is("read_at", null)
+  }
+  if (options?.type && options.type.trim().length > 0) {
+    query = query.eq("type", options.type.trim())
   }
 
+  const { data, error, count: filteredCount } = await query
+  if (error) throw error
+
+  // Count global de no leídos (no se ve afectado por filtros). Siempre útil
+  // para el badge del dropdown/nav.
   const { count: unreadCount, error: countError } = await supabase
     .from("project_notifications")
     .select("id", { head: true, count: "exact" })
     .eq("audience", "admin")
     .is("read_at", null)
 
-  if (countError) {
-    throw countError
-  }
+  if (countError) throw countError
 
   return {
     notifications: (data ?? []).map(mapNotificationRow),
     unreadCount: unreadCount ?? 0,
+    totalCount: filteredCount ?? undefined,
   }
+}
+
+export async function markAllAdminNotificationsRead(): Promise<number> {
+  const supabase = createServerSupabaseClient()
+  const { error, count } = await supabase
+    .from("project_notifications")
+    .update({ read_at: new Date().toISOString() }, { count: "exact" })
+    .eq("audience", "admin")
+    .is("read_at", null)
+
+  if (error) throw error
+  return count ?? 0
 }
 
 export async function markClientNotificationRead(notificationId: string, clientId: string): Promise<void> {

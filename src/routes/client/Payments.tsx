@@ -5,11 +5,12 @@ import { AlertCircle, CreditCard, ExternalLink, Loader2, RefreshCw } from "lucid
 
 import { fetchClientPayments, createClientPaymentCheckout } from "@app/lib/api/client"
 import type { ClientPaymentRecord, ClientPaymentsSummary } from "@app/lib/api/client"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { isStripeCheckoutUrl } from "@app/lib/payments"
 import { toast } from "sonner"
+import { ClientPageHeader } from "@/components/client/client-page-header"
 
 const STATUS_LABELS: Record<ClientPaymentRecord["status"], string> = {
   draft: "Borrador",
@@ -108,39 +109,41 @@ export function ClientPaymentsPage() {
 
   return (
     <div className="space-y-6 pb-16">
-      <Card className="rounded-[1.5rem] border-[#E8E6E0] bg-white/80 px-6 py-6 shadow-apple-xl">
-        <CardHeader className="p-0 pb-4">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <CardTitle className="font-heading text-2xl text-[#2F4F4F]">Pagos y facturación</CardTitle>
-              <CardDescription className="text-sm text-[#6B7280]">
-                Consulta tus pagos pendientes, revisa recibos pagados y accede al enlace seguro de Stripe para abonarlos.
-              </CardDescription>
-            </div>
-            <Button
-              variant="outline"
-              className="inline-flex items-center gap-2 rounded-full border-[#E8E6E0] px-4 py-2 text-sm text-[#2F4F4F]"
-              onClick={() => loadPayments()}
-              disabled={loading}
-            >
-              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-              Actualizar
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-2">
-          <div className="rounded-[1.25rem] border border-[#E8E6E0] bg-[#F8F7F4] p-4">
-            <p className="text-xs uppercase tracking-[0.3em] text-[#C6B89E]">Pendiente de pago</p>
-            <p className="mt-2 text-2xl font-semibold text-[#2F4F4F]">{loading ? "—" : pendingAmount}</p>
-            <p className="text-xs text-[#6B7280]">Importe total de propuestas activas</p>
-          </div>
-          <div className="rounded-[1.25rem] border border-[#E8E6E0] bg-[#F8F7F4] p-4">
-            <p className="text-xs uppercase tracking-[0.3em] text-[#C6B89E]">Pagado a Terrazea</p>
-            <p className="mt-2 text-2xl font-semibold text-[#2F4F4F]">{loading ? "—" : paidAmount}</p>
-            <p className="text-xs text-[#6B7280]">{summary ? `${summary.paidCount} pagos completados` : "—"}</p>
-          </div>
-        </CardContent>
-      </Card>
+      <ClientPageHeader
+        overline="Facturación"
+        title="Pagos y facturación"
+        description="Consulta tus pagos pendientes, revisa recibos pagados y accede al enlace seguro de Stripe para abonarlos."
+        icon={CreditCard}
+        onRefresh={() => loadPayments()}
+        refreshing={loading}
+      />
+
+      <section className="grid gap-4 sm:grid-cols-2">
+        <Card className="rounded-[1.5rem] border border-[#E8E6E0] bg-white shadow-apple-sm">
+          <CardContent className="p-5">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.25em] text-[#C6B89E]">
+              Pendiente de pago
+            </p>
+            <p className="mt-2 font-heading text-3xl font-semibold text-[#2F4F4F]">
+              {loading ? "—" : pendingAmount}
+            </p>
+            <p className="mt-1 text-xs text-[#6B7280]">Importe total de propuestas activas</p>
+          </CardContent>
+        </Card>
+        <Card className="rounded-[1.5rem] border border-[#E8E6E0] bg-white shadow-apple-sm">
+          <CardContent className="p-5">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.25em] text-[#C6B89E]">
+              Pagado a Terrazea
+            </p>
+            <p className="mt-2 font-heading text-3xl font-semibold text-[#2F4F4F]">
+              {loading ? "—" : paidAmount}
+            </p>
+            <p className="mt-1 text-xs text-[#6B7280]">
+              {summary ? `${summary.paidCount} pagos completados` : "—"}
+            </p>
+          </CardContent>
+        </Card>
+      </section>
 
       {error ? (
         <Card className="border-[#FCA5A5] bg-[#FEF2F2]">

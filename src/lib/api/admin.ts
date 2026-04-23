@@ -405,6 +405,9 @@ export interface SaveProjectTaskPayload {
   startDate?: string | null
   dueDate?: string | null
   position?: number
+  // Flags nuevos (opcionales hasta que los formularios los envíen todos).
+  isMilestone?: boolean
+  showInCalendar?: boolean
 }
 
 export async function createAdminProjectTask(projectId: string, payload: SaveProjectTaskPayload) {
@@ -451,14 +454,183 @@ export async function fetchAdminProjectTaskActivity(projectId: string, taskId: s
   return response.data.activity
 }
 
-export async function fetchAdminNotifications(options?: { limit?: number }): Promise<NotificationsFeed> {
-  const params = options?.limit ? { limit: options.limit } : undefined
-  const response = await api.get<NotificationsFeed>("/admin/notifications", { params })
+// Secciones protegidas por contraseña (deben coincidir con PROTECTED_SECTIONS
+// del backend en server/services/section-access.ts).
+export type ProtectedAdminSection = "budgets" | "payments"
+
+export interface AdminSectionStatus {
+  budgets: boolean
+  payments: boolean
+}
+
+/** Consulta al backend qué secciones protegidas están desbloqueadas en esta sesión. */
+export async function fetchAdminSectionStatus(): Promise<AdminSectionStatus> {
+  const response = await api.get<{ sections: AdminSectionStatus }>("/admin/section-status")
+  return response.data.sections
+}
+
+/** Valida la contraseña de una sección y, si es correcta, el backend emite la cookie firmada. */
+export async function unlockAdminSection(section: ProtectedAdminSection, password: string) {
+  const response = await api.post<{ success: boolean; section: ProtectedAdminSection }>(
+    "/admin/section-unlock",
+    { section, password },
+  )
+  return response.data
+}
+
+/** Revoca el acceso desbloqueado (si se quiere implementar "cerrar sección"). */
+export async function lockAdminSection(section: ProtectedAdminSection) {
+  await api.post("/admin/section-lock", { section })
+}
+
+export interface AdminNotificationsQuery {
+  limit?: number
+  offset?: number
+  unreadOnly?: boolean
+  type?: string
+}
+
+export async function fetchAdminNotifications(options?: AdminNotificationsQuery): Promise<NotificationsFeed> {
+  const params: Record<string, string | number | boolean> = {}
+  if (options?.limit) params.limit = options.limit
+  if (options?.offset) params.offset = options.offset
+  if (options?.unreadOnly) params.unreadOnly = true
+  if (options?.type) params.type = options.type
+  const response = await api.get<NotificationsFeed>("/admin/notifications", {
+    params: Object.keys(params).length > 0 ? params : undefined,
+  })
   return response.data
 }
 
 export async function markAdminNotificationRead(notificationId: string) {
   await api.post(`/admin/notifications/${notificationId}/read`)
+}
+
+export async function markAllAdminNotificationsRead() {
+  const response = await api.post<{ updated: number }>("/admin/notifications/mark-all-read")
+  return response.data
+}
+
+// ---------------------------------------------------------------------------
+// Colores por día en el calendario admin. Los endpoints existen en
+// server/routes/admin.ts (/admin/calendar/day-colors*) y devuelven el shape
+// que se replica aquí en el cliente.
+// ---------------------------------------------------------------------------
+
+export interface AdminDayColor {
+  date: string
+  color: string
+  note: string | null
+  updatedAt: string
+}
+
+export interface AdminDayColorPaletteEntry {
+  value: string
+  label: string
+}
+
+export async function fetchAdminDayColorPalette(): Promise<AdminDayColorPaletteEntry[]> {
+  const response = await api.get<{ palette: AdminDayColorPaletteEntry[] }>(
+    "/admin/calendar/day-colors/palette",
+  )
+  return response.data.palette ?? []
+}
+
+export async function fetchAdminDayColors(from: string, to: string): Promise<AdminDayColor[]> {
+  const response = await api.get<{ colors: AdminDayColor[] }>("/admin/calendar/day-colors", {
+    params: { from, to },
+  })
+  return response.data.colors ?? []
+}
+
+export async function upsertAdminDayColor(
+  date: string,
+  color: string,
+  note: string | null,
+): Promise<AdminDayColor> {
+  const response = await api.put<{ dayColor: AdminDayColor }>(`/admin/calendar/day-colors/${date}`, {
+    color,
+    note,
+  })
+  return response.data.dayColor
+}
+
+export async function clearAdminDayColor(date: string): Promise<void> {
+  await api.delete(`/admin/calendar/day-colors/${date}`)
+}
+
+// ---------------------------------------------------------------------------
+// Tareas: detalle individual y resolución desde evento de calendario.
+// ---------------------------------------------------------------------------
+
+export async function fetchAdminProjectTask(
+  projectId: string,
+  taskId: string,
+): Promise<import("@app/types/admin").AdminProjectTask> {
+  const response = await api.get<{ task: import("@app/types/admin").AdminProjectTask }>(
+    `/admin/projects/${projectId}/tasks/${taskId}`,
+  )
+  return response.data.task
+}
+
+export async function fetchAdminTaskFromCalendarEvent(
+  eventId: string,
+): Promise<import("@app/types/admin").AdminProjectTask | null> {
+  try {
+    const response = await api.get<{ task: import("@app/types/admin").AdminProjectTask | null }>(
+      `/admin/calendar/events/${eventId}/task`,
+    )
+    return response.data.task ?? null
+  } catch {
+    return null
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Finalizar / reactivar proyecto (requieren confirmación por texto).
+// ---------------------------------------------------------------------------
+
+export async function finalizeAdminProject(projectId: string, confirmText: string): Promise<void> {
+  await api.post(`/admin/projects/${projectId}/finalize`, { confirmText })
+}
+
+export async function reactivateAdminProject(
+  projectId: string,
+  confirmText: string,
+  newStatus?: string,
+): Promise<void> {
+  await api.post(`/admin/projects/${projectId}/reactivate`, { confirmText, newStatus })
+}
+
+// ---------------------------------------------------------------------------
+// Detalle de cliente (GET /admin/clients/:clientId) y asignación de proyectos
+// a miembros del equipo (PUT /admin/team-members/:memberId/projects).
+// ---------------------------------------------------------------------------
+
+export async function fetchAdminClientDetail(
+  clientId: string,
+): Promise<import("@app/types/admin").AdminClientDetails> {
+  const response = await api.get<{ client: import("@app/types/admin").AdminClientDetails }>(
+    `/admin/clients/${clientId}`,
+  )
+  return response.data.client
+}
+
+export interface TeamMemberProjectAssignment {
+  projectId: string
+  role: string
+  isPrimary?: boolean
+}
+
+export async function setTeamMemberProjects(
+  memberId: string,
+  assignments: TeamMemberProjectAssignment[],
+): Promise<{ success: boolean; assigned: number }> {
+  const response = await api.put<{ success: boolean; assigned: number }>(
+    `/admin/team-members/${memberId}/projects`,
+    { assignments },
+  )
+  return response.data
 }
 
 // Presupuestos: catálogo de productos ---------------------------------------

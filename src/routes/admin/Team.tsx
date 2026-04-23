@@ -14,10 +14,15 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet"
-import { Filter, Loader2, Plus, RefreshCw, Search, UserPlus, Users2 } from "lucide-react"
+import { FolderKanban, Filter, Loader2, Plus, RefreshCw, Search, UserPlus, Users2 } from "lucide-react"
 
 import type { AdminProjectTeamMember, AdminTeamMemberProject } from "@app/types/admin"
 import { createAdminTeamMember, fetchAdminTeamDirectory } from "@app/lib/api/admin"
+import { TeamMemberProjectsSheet } from "@/components/team/team-member-projects-sheet"
+import {
+  getProjectStatusBadgeClass,
+  getProjectStatusLabel,
+} from "@/lib/constants/project-status"
 
 type TeamStatusValue = "online" | "offline" | "busy" | "vacation" | "in_field"
 
@@ -79,6 +84,7 @@ export function AdminTeamPage() {
   const [statusFilters, setStatusFilters] = useState<TeamStatusValue[]>([])
   const [createSheetOpen, setCreateSheetOpen] = useState(false)
   const [creating, setCreating] = useState(false)
+  const [assignTarget, setAssignTarget] = useState<AdminProjectTeamMember | null>(null)
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -366,12 +372,13 @@ export function AdminTeamPage() {
                   <th className="px-4 py-3">Estado</th>
                   <th className="px-4 py-3">Contacto</th>
                   <th className="px-4 py-3">Proyectos asignados</th>
+                  <th className="px-4 py-3 text-right">Acciones</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#F1F5F9] bg-white text-sm">
                 {loading ? (
                   <tr>
-                    <td colSpan={5} className="py-10 text-center text-[#6B7280]">
+                    <td colSpan={6} className="py-10 text-center text-[#6B7280]">
                       <div className="inline-flex items-center gap-2">
                         <Loader2 className="h-4 w-4 animate-spin" /> Cargando equipo…
                       </div>
@@ -379,13 +386,13 @@ export function AdminTeamPage() {
                   </tr>
                 ) : error ? (
                   <tr>
-                    <td colSpan={5} className="py-10 text-center text-sm text-[#B91C1C]">
+                    <td colSpan={6} className="py-10 text-center text-sm text-[#B91C1C]">
                       {error}
                     </td>
                   </tr>
                 ) : teamMembers.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="py-12 text-center text-sm text-[#6B7280]">
+                    <td colSpan={6} className="py-12 text-center text-sm text-[#6B7280]">
                       No hay miembros registrados. Crea el primero para comenzar.
                     </td>
                   </tr>
@@ -412,20 +419,43 @@ export function AdminTeamPage() {
                       </td>
                       <td className="px-4 py-4">
                         <div className="flex flex-col gap-2 text-sm text-[#4B5563]">
-                          <span>{projectsLabel(member.projects)}</span>
-                          {member.projects && member.projects.length > 0 && (
-                            <div className="flex flex-wrap gap-2">
-                              {member.projects.slice(0, 4).map((project) => (
-                                <Badge key={project.id} className="bg-[#F8F7F4] text-[#2F4F4F]">
-                                  {project.name}
-                                </Badge>
-                              ))}
-                              {member.projects.length > 4 && (
-                                <span className="text-xs text-[#6B7280]">+{member.projects.length - 4} más</span>
-                              )}
-                            </div>
+                          {!member.projects || member.projects.length === 0 ? (
+                            <span className="text-[#9CA3AF]">Sin proyectos</span>
+                          ) : (
+                            <>
+                              <span className="text-xs text-[#6B7280]">
+                                {member.projects.length} proyecto{member.projects.length === 1 ? "" : "s"}
+                              </span>
+                              <div className="flex flex-wrap gap-1.5">
+                                {member.projects.slice(0, 3).map((project) => (
+                                  <Badge
+                                    key={project.id}
+                                    className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${getProjectStatusBadgeClass(project.status)}`}
+                                    title={`${project.name} · ${getProjectStatusLabel(project.status)}${project.clientName ? ` · ${project.clientName}` : ""}`}
+                                  >
+                                    {project.name}
+                                  </Badge>
+                                ))}
+                                {member.projects.length > 3 && (
+                                  <span className="text-[10px] font-medium text-[#6B7280]">
+                                    +{member.projects.length - 3} más
+                                  </span>
+                                )}
+                              </div>
+                            </>
                           )}
                         </div>
+                      </td>
+                      <td className="px-4 py-4 text-right">
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={() => setAssignTarget(member)}
+                          className="rounded-full bg-[#2F4F4F] px-3 text-[11px] font-semibold text-white shadow-apple-sm hover:bg-[#1F3535]"
+                        >
+                          <FolderKanban className="mr-1.5 h-3 w-3" />
+                          Asignar proyectos
+                        </Button>
                       </td>
                     </tr>
                   ))
@@ -437,6 +467,23 @@ export function AdminTeamPage() {
       </Card>
 
       <CreateTeamMemberSheet open={createSheetOpen} onOpenChange={setCreateSheetOpen} loading={creating} onSubmit={handleCreateMember} />
+
+      {assignTarget ? (
+        <TeamMemberProjectsSheet
+          open
+          onOpenChange={(openNext) => {
+            if (!openNext) setAssignTarget(null)
+          }}
+          memberId={assignTarget.id}
+          memberName={assignTarget.name}
+          defaultRole={assignTarget.role}
+          currentAssignments={assignTarget.projects ?? []}
+          onSaved={() => {
+            setAssignTarget(null)
+            void loadTeam()
+          }}
+        />
+      ) : null}
     </div>
   )
 }

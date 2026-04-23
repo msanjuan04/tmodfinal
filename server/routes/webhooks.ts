@@ -9,7 +9,7 @@ import { asyncHandler } from "../utils/async-handler"
 
 const router = Router()
 
-const stripe = new Stripe(env.stripeSecretKey, {
+const stripe = new Stripe(env.stripeSecretKey || "sk_test_disabled_placeholder", {
   apiVersion: "2025-02-24.acacia",
 })
 

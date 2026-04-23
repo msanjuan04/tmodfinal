@@ -1,43 +1,58 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
+  Award,
   Calendar,
-  ChevronRight,
   Download,
+  ExternalLink,
   Eye,
   File,
+  FileImage,
   FileSpreadsheet,
   FileText,
   Filter,
   Folder,
-  ImageIcon,
+  Image as ImageIcon,
   LayoutGrid,
   List,
+  Loader2,
+  Scale,
   Search,
   Tag,
+  Wallet,
   X,
 } from "lucide-react"
 
 import type { DocumentsData } from "@app/types/documents"
+
+type DocumentItem = DocumentsData["documents"][number]
 
 interface DocumentsViewProps {
   data: DocumentsData
   showHeader?: boolean
 }
 
+type ViewMode = "grid" | "list"
+type TypeFilter = "all" | "images" | "pdf" | "docs" | "spreadsheets" | "others"
+type DateFilter = "all" | "last7" | "last30" | "older"
+type CategoryTab = "all" | "planos" | "certificados" | "legal" | "presupuestos" | "garantias"
+
+// -----------------------------------------------------------------------------
+// Componente principal
+// -----------------------------------------------------------------------------
+
 export function DocumentsView({ data, showHeader = true }: DocumentsViewProps) {
   const [searchQuery, setSearchQuery] = useState("")
-  const [viewMode, setViewMode] = useState<"grid" | "list">("grid")
-  const [typeFilter, setTypeFilter] = useState<"all" | "images" | "pdf" | "docs" | "spreadsheets" | "others">("all")
-  const [dateFilter, setDateFilter] = useState<"all" | "last7" | "last30" | "older">("all")
-  const [previewDoc, setPreviewDoc] = useState<DocumentsData["documents"][number] | null>(null)
+  const [viewMode, setViewMode] = useState<ViewMode>("grid")
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>("all")
+  const [dateFilter, setDateFilter] = useState<DateFilter>("all")
+  const [categoryTab, setCategoryTab] = useState<CategoryTab>("all")
+  const [previewDoc, setPreviewDoc] = useState<DocumentItem | null>(null)
 
   const filteredDocuments = useMemo(() => {
     const query = searchQuery.toLowerCase().trim()
@@ -49,490 +64,304 @@ export function DocumentsView({ data, showHeader = true }: DocumentsViewProps) {
       const matchesType = typeFilter === "all" || normalizedType === typeFilter
 
       const uploadedAt = doc.uploadedAt ? new Date(doc.uploadedAt) : null
-      const now = new Date()
       let matchesDate = true
       if (uploadedAt && dateFilter !== "all") {
-        const diffDays = Math.floor((now.getTime() - uploadedAt.getTime()) / (1000 * 60 * 60 * 24))
+        const diffDays = Math.floor((Date.now() - uploadedAt.getTime()) / (1000 * 60 * 60 * 24))
         if (dateFilter === "last7") matchesDate = diffDays <= 7
         if (dateFilter === "last30") matchesDate = diffDays <= 30
         if (dateFilter === "older") matchesDate = diffDays > 30
       }
 
-      return matchesQuery && matchesType && matchesDate
-    })
-  }, [data.documents, searchQuery, typeFilter, dateFilter])
+      const normalizedCategory = doc.category.toLowerCase()
+      const matchesCategory =
+        categoryTab === "all" ||
+        normalizedCategory === categoryTab ||
+        (categoryTab === "garantias" && normalizedCategory.includes("garant"))
 
-  const plansDocuments = filteredDocuments.filter((doc) => doc.category.toLowerCase() === "planos")
-  const certificatesDocuments = filteredDocuments.filter((doc) => doc.category.toLowerCase() === "certificados")
-  const legalDocuments = filteredDocuments.filter((doc) => doc.category.toLowerCase() === "legal")
-  const budgetDocuments = filteredDocuments.filter((doc) => doc.category.toLowerCase() === "presupuestos")
+      return matchesQuery && matchesType && matchesDate && matchesCategory
+    })
+  }, [data.documents, searchQuery, typeFilter, dateFilter, categoryTab])
+
+  const activeFilters =
+    (typeFilter !== "all" ? 1 : 0) + (dateFilter !== "all" ? 1 : 0) + (searchQuery.trim() ? 1 : 0)
+
+  const stats = data.stats
+  const newLabel =
+    stats.newThisWeek === 0
+      ? "Sin cambios esta semana"
+      : `${stats.newThisWeek} añadido${stats.newThisWeek === 1 ? "" : "s"} esta semana`
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6 pb-16">
       {showHeader ? (
-        <header>
-          <div className="flex items-center gap-2 text-sm text-[#6b7280]">
-            <span>Dashboard</span>
-            <ChevronRight className="h-4 w-4" />
-            <span className="text-[#2f4f4f]">Documentos</span>
-          </div>
-          <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <h1 className="font-serif text-3xl font-bold text-[#2f4f4f] sm:text-4xl">Documentos del Proyecto</h1>
-              <p className="mt-2 text-lg text-[#6b7280]">Accede a toda la documentación técnica y legal</p>
+        <section className="rounded-[1.75rem] border border-[#E8E6E0] bg-white/95 p-6 shadow-apple-md lg:p-8">
+          <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#F4F1EA] text-[#2F4F4F]">
+                  <FileText className="h-4 w-4" />
+                </div>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-[#C6B89E]">
+                  Gestión documental
+                </p>
+              </div>
+              <h1 className="font-heading text-3xl font-semibold leading-tight text-[#2F4F4F] sm:text-4xl">
+                Documentos del proyecto
+              </h1>
+              <p className="max-w-2xl text-sm leading-relaxed text-[#6B7280]">
+                Consulta planos, certificados, documentación legal y presupuestos en un solo lugar. Usa los filtros o
+                la búsqueda para encontrar rápido lo que necesitas.
+              </p>
             </div>
-            <Button className="bg-[#2f4f4f] text-white hover:bg-[#1f3535]">
-              <Download className="mr-2 h-4 w-4" />
-              Descargar Todo
-            </Button>
           </div>
-        </header>
+        </section>
       ) : null}
 
-      <section className="grid gap-6 sm:grid-cols-2 xl:grid-cols-5">
-        <StatCard
-          title="Total Documentos"
-          icon={FileText}
-          value={data.stats.total}
-          description={
-            data.stats.newThisWeek === 0
-              ? "Sin cambios esta semana"
-              : `${data.stats.newThisWeek} añadido${data.stats.newThisWeek === 1 ? "" : "s"} esta semana`
-          }
-        />
-        <StatCard title="Planos" icon={ImageIcon} value={data.stats.plans} description="Arquitectónicos y técnicos" />
-        <StatCard title="Certificados" icon={File} value={data.stats.certificates} description="Todos vigentes" />
-        <StatCard title="Garantías" icon={FileSpreadsheet} value={data.stats.warranties} description="Materiales y trabajos" />
-        <StatCard title="Presupuestos" icon={FileText} value={data.stats.budgets} description="Adjuntos a pagos" />
+      {/* Stats: 5 tarjetas compactas con acento de color */}
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <StatCard icon={FileText} label="Total" value={stats.total} hint={newLabel} tone="slate" />
+        <StatCard icon={FileImage} label="Planos" value={stats.plans} hint="Arquitectónicos y técnicos" tone="teal" />
+        <StatCard icon={Award} label="Certificados" value={stats.certificates} hint="Vigentes" tone="amber" />
+        <StatCard icon={Scale} label="Garantías" value={stats.warranties} hint="Materiales y trabajo" tone="green" />
+        <StatCard icon={Wallet} label="Presupuestos" value={stats.budgets} hint="Adjuntos a pagos" tone="sand" />
       </section>
 
-      <Card className="border-[#e8e6e0]">
-        <CardContent className="pt-6">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#6b7280]" />
-              <Input
-                placeholder="Buscar documentos..."
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-                className="border-[#e8e6e0] pl-10 focus-visible:ring-[#2f4f4f]"
-              />
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                variant="outline"
-                className={`rounded-full border-[#E8E6E0] px-4 py-2 text-xs font-semibold ${
-                  viewMode === "grid" ? "bg-[#2F4F4F] text-white" : "text-[#2F4F4F]"
-                }`}
-                onClick={() => setViewMode("grid")}
-                aria-label="Vista de galería"
-              >
-                <LayoutGrid className="mr-2 h-4 w-4" />
-                Galería
-              </Button>
-              <Button
-                variant="outline"
-                className={`rounded-full border-[#E8E6E0] px-4 py-2 text-xs font-semibold ${
-                  viewMode === "list" ? "bg-[#2F4F4F] text-white" : "text-[#2F4F4F]"
-                }`}
-                onClick={() => setViewMode("list")}
-                aria-label="Vista de lista"
-              >
-                <List className="mr-2 h-4 w-4" />
-                Lista
-              </Button>
-            </div>
+      {/* Toolbar: búsqueda + vista + filtros */}
+      <section className="rounded-[1.25rem] border border-[#E8E6E0] bg-white/95 p-4 shadow-apple-sm lg:p-5">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+          <div className="relative flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#9CA3AF]" />
+            <Input
+              placeholder="Buscar por nombre o categoría…"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              className="h-10 rounded-full border-[#E8E6E0] bg-[#F8F7F4] pl-10 text-sm focus-visible:ring-[#2F4F4F]"
+            />
           </div>
-
-          <div className="mt-4 flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2">
             <FilterPill
-              label="Tipo"
               icon={Tag}
+              label="Tipo"
+              value={typeFilter}
+              onChange={(v) => setTypeFilter(v as TypeFilter)}
               options={[
-                { value: "all", label: "Todos" },
+                { value: "all", label: "Todos los tipos" },
                 { value: "images", label: "Imágenes" },
                 { value: "pdf", label: "PDF" },
-                { value: "docs", label: "Docs" },
-                { value: "spreadsheets", label: "Hojas" },
+                { value: "docs", label: "Documentos (Word)" },
+                { value: "spreadsheets", label: "Hojas (Excel)" },
                 { value: "others", label: "Otros" },
               ]}
-              value={typeFilter}
-              onChange={(value) => setTypeFilter(value as typeof typeFilter)}
             />
             <FilterPill
-              label="Fecha"
               icon={Calendar}
+              label="Fecha"
+              value={dateFilter}
+              onChange={(v) => setDateFilter(v as DateFilter)}
               options={[
                 { value: "all", label: "Siempre" },
                 { value: "last7", label: "Últimos 7 días" },
                 { value: "last30", label: "Últimos 30 días" },
                 { value: "older", label: "Más antiguos" },
               ]}
-              value={dateFilter}
-              onChange={(value) => setDateFilter(value as typeof dateFilter)}
             />
+            <div className="inline-flex rounded-full border border-[#E8E6E0] bg-[#F8F7F4] p-1">
+              <button
+                type="button"
+                onClick={() => setViewMode("grid")}
+                aria-label="Vista de galería"
+                className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+                  viewMode === "grid" ? "bg-white text-[#2F4F4F] shadow-apple-sm" : "text-[#6B7280] hover:text-[#2F4F4F]"
+                }`}
+              >
+                <LayoutGrid className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode("list")}
+                aria-label="Vista de lista"
+                className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+                  viewMode === "list" ? "bg-white text-[#2F4F4F] shadow-apple-sm" : "text-[#6B7280] hover:text-[#2F4F4F]"
+                }`}
+              >
+                <List className="h-3.5 w-3.5" />
+              </button>
+            </div>
           </div>
-        </CardContent>
-      </Card>
+        </div>
 
-      <Tabs defaultValue="all" className="space-y-6">
-        <TabsList className="flex flex-wrap items-center gap-2 rounded-full border border-[#E8E6E0] bg-white p-1 shadow-sm">
-          <TabsTrigger
-            value="all"
-            className="rounded-full px-4 py-2 text-sm font-medium text-[#4B5563] transition-colors data-[state=active]:bg-[#2F4F4F] data-[state=active]:text-white"
-          >
-            Todos
-          </TabsTrigger>
-          <TabsTrigger
-            value="plans"
-            className="rounded-full px-4 py-2 text-sm font-medium text-[#4B5563] transition-colors data-[state=active]:bg-[#2F4F4F] data-[state=active]:text-white"
-          >
-            Planos
-          </TabsTrigger>
-          <TabsTrigger
-            value="certificates"
-            className="rounded-full px-4 py-2 text-sm font-medium text-[#4B5563] transition-colors data-[state=active]:bg-[#2F4F4F] data-[state=active]:text-white"
-          >
-            Certificados
-          </TabsTrigger>
-          <TabsTrigger
-            value="legal"
-            className="rounded-full px-4 py-2 text-sm font-medium text-[#4B5563] transition-colors data-[state=active]:bg-[#2F4F4F] data-[state=active]:text-white"
-          >
-            Legal
-          </TabsTrigger>
-          <TabsTrigger
-            value="budgets"
-            className="rounded-full px-4 py-2 text-sm font-medium text-[#4B5563] transition-colors data-[state=active]:bg-[#2F4F4F] data-[state=active]:text-white"
-          >
-            Presupuestos
-          </TabsTrigger>
-        </TabsList>
+        {activeFilters > 0 ? (
+          <div className="mt-3 flex items-center gap-2 text-xs text-[#6B7280]">
+            <Filter className="h-3.5 w-3.5" />
+            <span>{filteredDocuments.length} resultado{filteredDocuments.length === 1 ? "" : "s"}</span>
+            <button
+              type="button"
+              onClick={() => {
+                setSearchQuery("")
+                setTypeFilter("all")
+                setDateFilter("all")
+              }}
+              className="ml-1 rounded-full border border-[#E8E6E0] bg-white px-3 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#2F4F4F] transition hover:bg-[#F4F1EA]"
+            >
+              Limpiar filtros
+            </button>
+          </div>
+        ) : null}
+      </section>
 
-        <DocumentTab
-          id="all"
-          title="Todos los documentos"
-          description="Listado completo"
-          documents={filteredDocuments}
-          viewMode={viewMode}
-          onPreview={setPreviewDoc}
+      {/* Tabs por categoría */}
+      <nav className="flex flex-wrap items-center gap-2">
+        <CategoryTabButton active={categoryTab === "all"} onClick={() => setCategoryTab("all")} label="Todos" count={data.documents.length} />
+        <CategoryTabButton
+          active={categoryTab === "planos"}
+          onClick={() => setCategoryTab("planos")}
+          label="Planos"
+          count={data.documents.filter((d) => d.category.toLowerCase() === "planos").length}
         />
-        <DocumentTab
-          id="plans"
-          title="Planos"
-          description="Documentación gráfica y técnica"
-          documents={plansDocuments}
-          emptyMessage="No hay documentos de planos disponibles."
-          viewMode={viewMode}
-          onPreview={setPreviewDoc}
+        <CategoryTabButton
+          active={categoryTab === "certificados"}
+          onClick={() => setCategoryTab("certificados")}
+          label="Certificados"
+          count={data.documents.filter((d) => d.category.toLowerCase() === "certificados").length}
         />
-        <DocumentTab
-          id="certificates"
-          title="Certificados"
-          description="Certificaciones y homologaciones"
-          documents={certificatesDocuments}
-          emptyMessage="No hay certificados almacenados."
-          viewMode={viewMode}
-          onPreview={setPreviewDoc}
+        <CategoryTabButton
+          active={categoryTab === "legal"}
+          onClick={() => setCategoryTab("legal")}
+          label="Legal"
+          count={data.documents.filter((d) => d.category.toLowerCase() === "legal").length}
         />
-        <DocumentTab
-          id="legal"
-          title="Legal"
-          description="Permisos y documentación legal"
-          documents={legalDocuments}
-          emptyMessage="No hay documentos legales registrados."
-          viewMode={viewMode}
-          onPreview={setPreviewDoc}
+        <CategoryTabButton
+          active={categoryTab === "presupuestos"}
+          onClick={() => setCategoryTab("presupuestos")}
+          label="Presupuestos"
+          count={data.documents.filter((d) => d.category.toLowerCase() === "presupuestos").length}
         />
-        <DocumentTab
-          id="budgets"
-          title="Presupuestos"
-          description="Presupuestos y propuestas económicas adjuntas"
-          documents={budgetDocuments}
-          emptyMessage="No se han registrado presupuestos."
-          viewMode={viewMode}
-          onPreview={setPreviewDoc}
+        <CategoryTabButton
+          active={categoryTab === "garantias"}
+          onClick={() => setCategoryTab("garantias")}
+          label="Garantías"
+          count={data.documents.filter((d) => d.category.toLowerCase().includes("garant")).length}
         />
-      </Tabs>
+      </nav>
 
-      <DocumentPreview previewDoc={previewDoc} onClose={() => setPreviewDoc(null)} />
+      {/* Contenido */}
+      {filteredDocuments.length === 0 ? (
+        <EmptyState hasFilters={activeFilters > 0} />
+      ) : viewMode === "grid" ? (
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {filteredDocuments.map((doc) => (
+            <DocumentCard key={doc.id} doc={doc} onPreview={() => setPreviewDoc(doc)} />
+          ))}
+        </div>
+      ) : (
+        <ul className="space-y-2">
+          {filteredDocuments.map((doc) => (
+            <DocumentRow key={doc.id} doc={doc} onPreview={() => setPreviewDoc(doc)} />
+          ))}
+        </ul>
+      )}
+
+      <DocumentPreview doc={previewDoc} onClose={() => setPreviewDoc(null)} />
     </div>
   )
 }
+
+// -----------------------------------------------------------------------------
+// Sub-componentes UI
+// -----------------------------------------------------------------------------
+
+const TONE_CLASSES = {
+  slate: { bg: "bg-[#F4F1EA]", text: "text-[#2F4F4F]" },
+  teal: { bg: "bg-[#DBEAFE]", text: "text-[#1D4ED8]" },
+  amber: { bg: "bg-[#FEF3C7]", text: "text-[#B45309]" },
+  green: { bg: "bg-[#DCFCE7]", text: "text-[#047857]" },
+  sand: { bg: "bg-[#EDE9FE]", text: "text-[#6D28D9]" },
+} as const
 
 function StatCard({
-  title,
   icon: Icon,
+  label,
   value,
-  description,
+  hint,
+  tone,
 }: {
-  title: string
   icon: typeof FileText
+  label: string
   value: number
-  description: string
+  hint: string
+  tone: keyof typeof TONE_CLASSES
 }) {
+  const t = TONE_CLASSES[tone]
   return (
-    <Card className="border-[#e8e6e0]">
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium text-[#6b7280]">{title}</CardTitle>
-        <Icon className="h-4 w-4 text-[#2f4f4f]" />
-      </CardHeader>
-      <CardContent>
-        <div className="text-2xl font-bold text-[#2f4f4f]">{value}</div>
-        <p className="mt-1 text-xs text-[#6b7280]">{description}</p>
-      </CardContent>
-    </Card>
-  )
-}
-
-function DocumentTab({
-  id,
-  title,
-  description,
-  documents,
-  emptyMessage,
-  viewMode,
-  onPreview,
-}: {
-  id: string
-  title: string
-  description: string
-  documents: DocumentsData["documents"]
-  emptyMessage?: string
-  viewMode: "grid" | "list"
-  onPreview: (doc: DocumentsData["documents"][number] | null) => void
-}) {
-  return (
-    <TabsContent value={id} className="space-y-4">
-      <Card className="border-[#e8e6e0]">
-        <CardHeader>
-          <CardTitle className="font-serif text-xl text-[#2f4f4f]">{title}</CardTitle>
-          <CardDescription>{description}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {documents.length === 0 ? (
-            <p className="text-sm text-[#6b7280]">{emptyMessage ?? "No hay documentos disponibles."}</p>
-          ) : viewMode === "grid" ? (
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {documents.map((doc) => (
-                <DocumentGalleryCard key={doc.id} doc={doc} onPreview={() => onPreview(doc)} />
-              ))}
-            </div>
-          ) : (
-            <div className="grid gap-4">
-              {documents.map((doc) => (
-                <DocumentRow key={doc.id} doc={doc} onPreview={() => onPreview(doc)} />
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    </TabsContent>
-  )
-}
-
-function DocumentRow({ doc, onPreview }: { doc: DocumentsData["documents"][number]; onPreview: () => void }) {
-  const fileLabel = formatFileLabel(doc)
-  const updatedLabel = formatUpdatedAt(doc.uploadedAt)
-
-  return (
-    <div className="rounded-[1.25rem] border border-[#E8E6E0] bg-white/80 p-6 shadow-[0_10px_30px_rgba(47,79,79,0.05)] transition-colors">
-      <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
-        <div className="space-y-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge className="rounded-full border-[#E8E6E0] bg-[#F8F7F4] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.3em] text-[#C6B89E]">
-              {doc.category}
-            </Badge>
-            <Badge className="rounded-full border-transparent bg-[#2F4F4F] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-white">
-              {fileLabel}
-            </Badge>
-          </div>
-          <h3 className="font-heading text-lg text-[#2F4F4F] sm:text-xl">{doc.name}</h3>
-          <div className="flex flex-wrap items-center gap-3 text-xs text-[#6B7280]">
-            <span>{doc.sizeLabel ?? "Tamaño no disponible"}</span>
-            <span className="hidden text-[#D6D2C4] sm:inline">•</span>
-            <span>{updatedLabel}</span>
-          </div>
+    <div className="rounded-[1.25rem] border border-[#E8E6E0] bg-white/95 p-4 shadow-apple-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.25em] text-[#C6B89E]">{label}</p>
+          <p className="mt-1 text-2xl font-bold text-[#2F4F4F]">{value}</p>
         </div>
-        <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:gap-4">
-          <Badge className={`rounded-full border-transparent px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] ${statusBadgeClass(doc.status)}`}>
-            {formatStatus(doc.status)}
-          </Badge>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label={`Vista previa de ${doc.name}`}
-              className="text-[#2F4F4F] hover:bg-[#F4F1EA]"
-              onClick={onPreview}
-            >
-              <Eye className="h-4 w-4" />
-            </Button>
-            {doc.downloadUrl ? (
-              <Button
-                asChild
-                variant="ghost"
-                size="icon"
-                aria-label={`Descargar ${doc.name}`}
-                className="text-[#2F4F4F] hover:bg-[#F4F1EA] disabled:text-[#C5C9D1]"
-              >
-                <a href={doc.downloadUrl!} download={doc.name}>
-                  <Download className="h-4 w-4" />
-                  <span className="sr-only">{`Descargar ${doc.name}`}</span>
-                </a>
-              </Button>
-            ) : (
-              <Button variant="ghost" size="icon" disabled className="text-[#C5C9D1]">
-                <Download className="h-4 w-4" />
-                <span className="sr-only">{`Descargar ${doc.name}`}</span>
-              </Button>
-            )}
-          </div>
+        <div className={`flex h-8 w-8 items-center justify-center rounded-full ${t.bg} ${t.text}`}>
+          <Icon className="h-4 w-4" />
         </div>
       </div>
+      <p className="mt-2 text-xs text-[#6B7280]">{hint}</p>
     </div>
   )
 }
 
-function DocumentGalleryCard({
-  doc,
-  onPreview,
+function CategoryTabButton({
+  active,
+  onClick,
+  label,
+  count,
 }: {
-  doc: DocumentsData["documents"][number]
-  onPreview: () => void
+  active: boolean
+  onClick: () => void
+  label: string
+  count: number
 }) {
-  const type = resolveDocumentType(doc)
-  const updatedLabel = formatUpdatedAt(doc.uploadedAt)
-  const isImage = type === "images" && doc.viewUrl
-
   return (
-    <div className="group rounded-[1.5rem] border border-[#E8E6E0] bg-white/90 shadow-apple-md transition hover:-translate-y-1 hover:shadow-apple-xl">
-      <div className="relative h-48 overflow-hidden rounded-t-[1.5rem] bg-[#F8F7F4]">
-        {isImage ? (
-          <img
-            src={doc.viewUrl ?? ""}
-            alt={doc.name}
-            className="h-full w-full object-cover transition duration-500 group-hover:scale-105"
-            onClick={onPreview}
-          />
-        ) : (
-          <div className="flex h-full items-center justify-center text-[#C6B89E]">
-            <Folder className="h-12 w-12" />
-          </div>
-        )}
-        <div className="absolute right-3 top-3 flex items-center gap-2 rounded-full bg-white/80 px-3 py-1 text-[11px] font-semibold text-[#2F4F4F] shadow-apple">
-          {typeLabel(type)}
-        </div>
-      </div>
-      <div className="space-y-3 p-5">
-        <div className="flex items-center gap-2">
-          <Badge className="rounded-full border-[#E8E6E0] bg-[#F8F7F4] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.3em] text-[#C6B89E]">
-            {doc.category}
-          </Badge>
-        </div>
-        <p className="line-clamp-2 font-heading text-base text-[#2F4F4F]">{doc.name}</p>
-        <p className="text-xs text-[#6B7280]">{updatedLabel}</p>
-        <div className="flex items-center justify-between">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-xs text-[#2F4F4F] hover:bg-[#F4F1EA]"
-            onClick={onPreview}
-          >
-            Vista previa
-          </Button>
-          {doc.downloadUrl ? (
-            <Button
-              asChild
-              size="icon"
-              variant="ghost"
-              className="rounded-full bg-[#F8F7F4] text-[#2F4F4F] hover:bg-[#E8E6E0]"
-            >
-              <a href={doc.downloadUrl} download={doc.name}>
-                <Download className="h-4 w-4" />
-              </a>
-            </Button>
-          ) : null}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function DocumentPreview({
-  previewDoc,
-  onClose,
-}: {
-  previewDoc: DocumentsData["documents"][number] | null
-  onClose: () => void
-}) {
-  if (!previewDoc) return null
-  const isImage = resolveDocumentType(previewDoc) === "images" && previewDoc.viewUrl
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-      <div className="relative w-full max-w-4xl rounded-3xl bg-white p-6 shadow-apple-xl">
-        <button
-          className="absolute right-4 top-4 rounded-full bg-[#F8F7F4] p-2 text-[#2F4F4F] hover:bg-[#E8E6E0]"
-          onClick={onClose}
-          aria-label="Cerrar vista previa"
-        >
-          <X className="h-4 w-4" />
-        </button>
-        <div className="space-y-4">
-          <div>
-            <p className="text-xs uppercase tracking-[0.3em] text-[#C6B89E]">Vista previa</p>
-            <h3 className="mt-1 font-heading text-2xl text-[#2F4F4F]">{previewDoc.name}</h3>
-          </div>
-          <div className="max-h-[60vh] overflow-auto rounded-[1.5rem] border border-[#E8E6E0] bg-[#F8F7F4]">
-            {isImage ? (
-              <img src={previewDoc.viewUrl ?? ""} alt={previewDoc.name} className="w-full object-contain" />
-            ) : previewDoc.viewUrl ? (
-              <iframe src={previewDoc.viewUrl} className="h-[60vh] w-full rounded-[1.5rem]" title={previewDoc.name} />
-            ) : (
-              <div className="flex h-[40vh] flex-col items-center justify-center space-y-3 text-sm text-[#6B7280]">
-                <Eye className="h-6 w-6 text-[#C6B89E]" />
-                <p>No hay vista previa disponible para este documento.</p>
-              </div>
-            )}
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            {previewDoc.downloadUrl ? (
-              <Button asChild className="rounded-full bg-[#2F4F4F] text-white hover:bg-[#1F3535]">
-                <a href={previewDoc.downloadUrl} download={previewDoc.name}>
-                  <Download className="mr-2 h-4 w-4" />
-                  Descargar
-                </a>
-              </Button>
-            ) : null}
-            <span className="text-xs text-[#6B7280]">{formatUpdatedAt(previewDoc.uploadedAt)}</span>
-          </div>
-        </div>
-      </div>
-    </div>
+    <button
+      type="button"
+      onClick={onClick}
+      className={`inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-sm font-medium transition ${
+        active
+          ? "border-[#2F4F4F] bg-[#2F4F4F] text-white shadow-apple-sm"
+          : "border-[#E8E6E0] bg-white text-[#4B5563] hover:border-[#2F4F4F]/40 hover:text-[#2F4F4F]"
+      }`}
+    >
+      <span>{label}</span>
+      <span
+        className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+          active ? "bg-white/20 text-white" : "bg-[#F8F7F4] text-[#6B7280]"
+        }`}
+      >
+        {count}
+      </span>
+    </button>
   )
 }
 
 function FilterPill({
-  label,
   icon: Icon,
-  options,
+  label,
   value,
   onChange,
+  options,
 }: {
-  label: string
   icon: typeof Tag
-  options: Array<{ value: string; label: string }>
+  label: string
   value: string
-  onChange: (value: string) => void
+  onChange: (v: string) => void
+  options: Array<{ value: string; label: string }>
 }) {
   return (
-    <div className="inline-flex items-center gap-2 rounded-full border border-[#E8E6E0] bg-white px-3 py-1">
-      <Icon className="h-4 w-4 text-[#6B7280]" />
+    <div className="relative inline-flex items-center gap-2 rounded-full border border-[#E8E6E0] bg-[#F8F7F4] pl-3 pr-1">
+      <Icon className="h-3.5 w-3.5 text-[#6B7280]" />
+      <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[#C6B89E]">{label}</span>
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="bg-transparent text-sm font-medium text-[#2F4F4F] focus:outline-none"
+        className="h-9 cursor-pointer appearance-none rounded-full bg-transparent pr-8 text-sm font-medium text-[#2F4F4F] focus:outline-none"
       >
         {options.map((option) => (
           <option key={option.value} value={option.value}>
@@ -544,6 +373,382 @@ function FilterPill({
   )
 }
 
+function DocumentCard({ doc, onPreview }: { doc: DocumentItem; onPreview: () => void }) {
+  const type = resolveDocumentType(doc)
+  const isImage = type === "images" && doc.viewUrl
+  const iconMeta = typeIconMeta(type)
+  const updated = formatUpdatedAt(doc.uploadedAt)
+
+  return (
+    <article className="group flex flex-col overflow-hidden rounded-[1.5rem] border border-[#E8E6E0] bg-white shadow-apple-sm transition hover:-translate-y-0.5 hover:shadow-apple-md">
+      <button
+        type="button"
+        onClick={onPreview}
+        className="relative flex h-40 w-full items-center justify-center overflow-hidden bg-[#F8F7F4]"
+        aria-label={`Vista previa de ${doc.name}`}
+      >
+        {isImage ? (
+          <img
+            src={doc.viewUrl ?? ""}
+            alt={doc.name}
+            className="h-full w-full object-cover transition duration-500 group-hover:scale-105"
+          />
+        ) : (
+          <div className={`flex h-16 w-16 items-center justify-center rounded-2xl ${iconMeta.bg} ${iconMeta.text}`}>
+            <iconMeta.Icon className="h-7 w-7" />
+          </div>
+        )}
+        <span className="absolute right-3 top-3 rounded-full bg-white/90 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#2F4F4F] shadow-apple-sm backdrop-blur">
+          {formatFileLabel(doc)}
+        </span>
+      </button>
+
+      <div className="flex flex-1 flex-col gap-3 p-5">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge className="rounded-full border-[#E8E6E0] bg-[#F8F7F4] px-3 py-0.5 text-[10px] font-semibold uppercase tracking-[0.25em] text-[#C6B89E]">
+            {doc.category}
+          </Badge>
+          <Badge className={`rounded-full border-transparent px-3 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] ${statusBadgeClass(doc.status)}`}>
+            {formatStatus(doc.status)}
+          </Badge>
+        </div>
+        <p className="line-clamp-2 font-heading text-base leading-snug text-[#2F4F4F]">{doc.name}</p>
+        <p className="text-xs text-[#6B7280]">
+          {doc.sizeLabel ?? "Tamaño no disponible"} · {updated}
+        </p>
+        <div className="mt-auto flex items-center justify-between gap-2 pt-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onPreview}
+            className="h-9 gap-2 rounded-full px-3 text-xs font-semibold text-[#2F4F4F] hover:bg-[#F4F1EA]"
+          >
+            <Eye className="h-3.5 w-3.5" />
+            Vista previa
+          </Button>
+          {doc.downloadUrl ? (
+            <Button
+              asChild
+              variant="outline"
+              size="sm"
+              className="h-9 gap-2 rounded-full border-[#E8E6E0] bg-white px-3 text-xs font-semibold text-[#2F4F4F] hover:bg-[#F4F1EA]"
+            >
+              <a href={doc.downloadUrl} download={doc.name}>
+                <Download className="h-3.5 w-3.5" />
+                Descargar
+              </a>
+            </Button>
+          ) : null}
+        </div>
+      </div>
+    </article>
+  )
+}
+
+function DocumentRow({ doc, onPreview }: { doc: DocumentItem; onPreview: () => void }) {
+  const type = resolveDocumentType(doc)
+  const iconMeta = typeIconMeta(type)
+  const updated = formatUpdatedAt(doc.uploadedAt)
+
+  return (
+    <li className="rounded-[1.25rem] border border-[#E8E6E0] bg-white/95 shadow-apple-sm transition hover:shadow-apple-md">
+      <div className="flex items-center gap-4 p-4 sm:p-5">
+        <div className={`hidden h-12 w-12 shrink-0 items-center justify-center rounded-2xl sm:flex ${iconMeta.bg} ${iconMeta.text}`}>
+          <iconMeta.Icon className="h-5 w-5" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge className="rounded-full border-[#E8E6E0] bg-[#F8F7F4] px-3 py-0.5 text-[10px] font-semibold uppercase tracking-[0.25em] text-[#C6B89E]">
+              {doc.category}
+            </Badge>
+            <Badge className="rounded-full border-transparent bg-[#2F4F4F]/90 px-3 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-white">
+              {formatFileLabel(doc)}
+            </Badge>
+            <Badge className={`rounded-full border-transparent px-3 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] ${statusBadgeClass(doc.status)}`}>
+              {formatStatus(doc.status)}
+            </Badge>
+          </div>
+          <p className="mt-2 truncate font-heading text-sm font-semibold text-[#2F4F4F] sm:text-base">{doc.name}</p>
+          <p className="text-xs text-[#6B7280]">
+            {doc.sizeLabel ?? "Tamaño no disponible"} · {updated}
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onPreview}
+            aria-label={`Vista previa de ${doc.name}`}
+            className="h-9 w-9 rounded-full text-[#2F4F4F] hover:bg-[#F4F1EA]"
+          >
+            <Eye className="h-4 w-4" />
+          </Button>
+          {doc.downloadUrl ? (
+            <Button
+              asChild
+              variant="ghost"
+              size="icon"
+              aria-label={`Descargar ${doc.name}`}
+              className="h-9 w-9 rounded-full text-[#2F4F4F] hover:bg-[#F4F1EA]"
+            >
+              <a href={doc.downloadUrl} download={doc.name}>
+                <Download className="h-4 w-4" />
+              </a>
+            </Button>
+          ) : null}
+        </div>
+      </div>
+    </li>
+  )
+}
+
+function EmptyState({ hasFilters }: { hasFilters: boolean }) {
+  return (
+    <div className="rounded-[1.5rem] border border-dashed border-[#E8E6E0] bg-white/60 px-8 py-16 text-center">
+      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[#F4F1EA] text-[#C6B89E]">
+        <Folder className="h-5 w-5" />
+      </div>
+      <p className="mt-3 font-heading text-lg text-[#2F4F4F]">
+        {hasFilters ? "Sin resultados con esos filtros" : "Aún no hay documentos publicados"}
+      </p>
+      <p className="mt-1 text-sm text-[#6B7280]">
+        {hasFilters
+          ? "Prueba a relajar los filtros o busca por otro término."
+          : "Cuando tu equipo Terrazea publique documentos, aparecerán aquí."}
+      </p>
+    </div>
+  )
+}
+
+// -----------------------------------------------------------------------------
+// Modal de preview. Detecta el tipo y elige visor:
+//  · imagen → <img>
+//  · PDF    → <iframe> con la URL directa
+//  · office → <iframe> con Microsoft Office Online Viewer (más fiable que
+//             Google Docs Viewer para xlsx/docx)
+//  · otros  → mensaje + botón descargar
+//
+// Además añadimos un timeout de 8 s: si el iframe no ha disparado onLoad para
+// entonces, asumimos que el visor no responde y mostramos el fallback para
+// que el usuario tenga al menos el botón de abrir/descargar.
+// -----------------------------------------------------------------------------
+
+const PREVIEW_TIMEOUT_MS = 8000
+
+function DocumentPreview({ doc, onClose }: { doc: DocumentItem | null; onClose: () => void }) {
+  const [iframeLoading, setIframeLoading] = useState(true)
+  const [iframeFailed, setIframeFailed] = useState(false)
+
+  useEffect(() => {
+    if (!doc) return
+    setIframeLoading(true)
+    setIframeFailed(false)
+
+    // Timeout de seguridad: si el visor externo no responde, mostramos fallback
+    // en vez de dejar al usuario viendo un spinner infinito.
+    const timeoutId = window.setTimeout(() => {
+      setIframeLoading(false)
+      setIframeFailed(true)
+    }, PREVIEW_TIMEOUT_MS)
+
+    // Cerrar con Escape.
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose()
+    }
+    document.addEventListener("keydown", onKey)
+    // Bloquear scroll del body mientras está abierto.
+    const previous = document.body.style.overflow
+    document.body.style.overflow = "hidden"
+    return () => {
+      window.clearTimeout(timeoutId)
+      document.removeEventListener("keydown", onKey)
+      document.body.style.overflow = previous
+    }
+  }, [doc, onClose])
+
+  if (!doc) return null
+
+  const type = resolveDocumentType(doc)
+  const previewSrc = buildPreviewUrl(doc, type)
+  const hasPreview = Boolean(previewSrc)
+  const externalUrl = doc.viewUrl ?? null
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-3 backdrop-blur-sm sm:p-6"
+      role="dialog"
+      aria-modal="true"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose()
+      }}
+    >
+      <div className="relative flex h-full max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-[1.75rem] border border-white/30 bg-white shadow-apple-xl">
+        {/* Header del modal */}
+        <header className="flex items-start justify-between gap-4 border-b border-[#E8E6E0] bg-white/95 px-5 py-4 sm:px-6">
+          <div className="min-w-0 flex-1">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-[#C6B89E]">Vista previa</p>
+            <h2 className="mt-1 truncate font-heading text-lg text-[#2F4F4F] sm:text-xl">{doc.name}</h2>
+            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-[#6B7280]">
+              <Badge className="rounded-full border-[#E8E6E0] bg-[#F8F7F4] px-2.5 py-0 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#C6B89E]">
+                {doc.category}
+              </Badge>
+              <Badge className="rounded-full border-transparent bg-[#2F4F4F]/90 px-2.5 py-0 text-[10px] font-semibold uppercase tracking-[0.2em] text-white">
+                {formatFileLabel(doc)}
+              </Badge>
+              <span>{doc.sizeLabel ?? "Tamaño no disponible"}</span>
+              <span className="text-[#D6D2C4]">·</span>
+              <span>{formatUpdatedAt(doc.uploadedAt)}</span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#F8F7F4] text-[#2F4F4F] transition hover:bg-[#E8E6E0]"
+            aria-label="Cerrar vista previa"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </header>
+
+        {/* Body con el visor */}
+        <div className="relative flex-1 overflow-auto bg-[#0F172A]">
+          {hasPreview ? (
+            <>
+              {iframeLoading ? (
+                <div className="absolute inset-0 flex items-center justify-center text-white/70">
+                  <Loader2 className="h-6 w-6 animate-spin" />
+                </div>
+              ) : null}
+
+              {type === "images" ? (
+                <div className="flex h-full min-h-[50vh] items-center justify-center bg-[#0F172A] p-4">
+                  <img
+                    src={previewSrc ?? ""}
+                    alt={doc.name}
+                    className="max-h-full max-w-full rounded-xl object-contain shadow-2xl"
+                    onLoad={() => setIframeLoading(false)}
+                    onError={() => {
+                      setIframeLoading(false)
+                      setIframeFailed(true)
+                    }}
+                  />
+                </div>
+              ) : (
+                <iframe
+                  key={previewSrc ?? ""}
+                  src={previewSrc ?? ""}
+                  title={doc.name}
+                  className="h-full min-h-[70vh] w-full border-0"
+                  onLoad={() => setIframeLoading(false)}
+                  onError={() => {
+                    setIframeLoading(false)
+                    setIframeFailed(true)
+                  }}
+                />
+              )}
+
+              {iframeFailed ? <PreviewUnavailable message="No hemos podido incrustar el archivo. Ábrelo en una nueva pestaña o descárgalo." /> : null}
+            </>
+          ) : (
+            <PreviewUnavailable message="Este tipo de archivo no tiene vista previa incrustada." />
+          )}
+        </div>
+
+        {/* Footer con acciones */}
+        <footer className="flex flex-wrap items-center justify-end gap-2 border-t border-[#E8E6E0] bg-white/95 px-5 py-3 sm:px-6">
+          {externalUrl ? (
+            <Button
+              asChild
+              variant="outline"
+              className="h-10 gap-2 rounded-full border-[#E8E6E0] bg-white text-xs font-semibold text-[#2F4F4F] hover:bg-[#F4F1EA]"
+            >
+              <a href={externalUrl} target="_blank" rel="noopener noreferrer">
+                <ExternalLink className="h-3.5 w-3.5" />
+                Abrir en nueva pestaña
+              </a>
+            </Button>
+          ) : null}
+          {doc.downloadUrl ? (
+            <Button
+              asChild
+              className="h-10 gap-2 rounded-full bg-[#2F4F4F] text-xs font-semibold text-white hover:bg-[#1F3535]"
+            >
+              <a href={doc.downloadUrl} download={doc.name}>
+                <Download className="h-3.5 w-3.5" />
+                Descargar
+              </a>
+            </Button>
+          ) : null}
+        </footer>
+      </div>
+    </div>
+  )
+}
+
+function PreviewUnavailable({ message }: { message: string }) {
+  return (
+    <div className="flex h-full min-h-[50vh] flex-col items-center justify-center gap-3 bg-[#0F172A] px-6 text-center text-white/70">
+      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white/10">
+        <File className="h-5 w-5" />
+      </div>
+      <p className="max-w-sm text-sm">{message}</p>
+    </div>
+  )
+}
+
+// -----------------------------------------------------------------------------
+// Helpers
+// -----------------------------------------------------------------------------
+
+function buildPreviewUrl(doc: DocumentItem, type: ReturnType<typeof resolveDocumentType>): string | null {
+  if (!doc.viewUrl) return null
+
+  if (type === "images" || type === "pdf") {
+    // Imagen y PDF los incrusta el navegador directamente desde la URL pública.
+    return doc.viewUrl
+  }
+
+  if (type === "docs" || type === "spreadsheets") {
+    // Microsoft Office Online Viewer es más fiable que Google Docs Viewer para
+    // archivos .xlsx/.docx. Requiere que la URL origen sea HTTPS y pública
+    // (Supabase Storage con getPublicUrl lo es).
+    const encoded = encodeURIComponent(doc.viewUrl)
+    return `https://view.officeapps.live.com/op/embed.aspx?src=${encoded}`
+  }
+
+  // Para otros formatos (zip, txt…) dejamos que el iframe lo intente por si el
+  // navegador sabe renderizarlo; si falla, onError muestra el fallback.
+  return doc.viewUrl
+}
+
+function resolveDocumentType(doc: DocumentItem): "images" | "pdf" | "docs" | "spreadsheets" | "others" {
+  const type = doc.fileType?.toLowerCase() ?? ""
+  if (type.includes("image") || /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(doc.name)) return "images"
+  if (type.includes("pdf") || doc.name.toLowerCase().endsWith(".pdf")) return "pdf"
+  if (type.includes("sheet") || /\.(xls|xlsx|csv)$/i.test(doc.name)) return "spreadsheets"
+  if (type.includes("word") || /\.(doc|docx)$/i.test(doc.name)) return "docs"
+  return "others"
+}
+
+function typeIconMeta(type: ReturnType<typeof resolveDocumentType>): {
+  Icon: typeof FileText
+  bg: string
+  text: string
+} {
+  switch (type) {
+    case "images":
+      return { Icon: ImageIcon, bg: "bg-[#EDE9FE]", text: "text-[#6D28D9]" }
+    case "pdf":
+      return { Icon: FileText, bg: "bg-[#FEE2E2]", text: "text-[#B91C1C]" }
+    case "docs":
+      return { Icon: FileText, bg: "bg-[#DBEAFE]", text: "text-[#1D4ED8]" }
+    case "spreadsheets":
+      return { Icon: FileSpreadsheet, bg: "bg-[#DCFCE7]", text: "text-[#047857]" }
+    default:
+      return { Icon: File, bg: "bg-[#F4F1EA]", text: "text-[#6B7280]" }
+  }
+}
+
 function formatDate(value: string | null): string {
   if (!value) return "Sin fecha"
   return new Intl.DateTimeFormat("es-ES", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(value))
@@ -551,41 +756,38 @@ function formatDate(value: string | null): string {
 
 function formatUpdatedAt(value: string | null): string {
   const formatted = formatDate(value)
-  if (formatted === "Sin fecha") return "Actualización pendiente"
-  return `Actualizado el ${formatted}`
+  if (formatted === "Sin fecha") return "Pendiente"
+  return formatted
 }
 
-function formatStatus(status: DocumentsData["documents"][number]["status"]): string {
-  return status.replace(/_/g, " ").replace(/^\w/u, (char) => char.toUpperCase())
+function formatStatus(status: DocumentItem["status"]): string {
+  return String(status).replace(/_/g, " ").replace(/^\w/u, (char) => char.toUpperCase())
 }
 
-function statusBadgeClass(status: DocumentsData["documents"][number]["status"]): string {
-  const base = "hover:bg-opacity-90"
+function statusBadgeClass(status: DocumentItem["status"]): string {
   switch (status) {
     case "aprobado":
-      return `bg-green-500/10 text-green-700 ${base}`
+      return "bg-[#DCFCE7] text-[#166534]"
     case "vigente":
-      return `bg-blue-500/10 text-blue-700 ${base}`
+      return "bg-[#DBEAFE] text-[#1D4ED8]"
     case "actualizado":
-      return `bg-orange-500/10 text-orange-700 ${base}`
+      return "bg-[#FFF7ED] text-[#C2410C]"
     default:
-      return `bg-gray-500/10 text-gray-700 ${base}`
+      return "bg-[#F4F1EA] text-[#6B7280]"
   }
 }
 
-function formatFileLabel(doc: DocumentsData["documents"][number]): string {
+function formatFileLabel(doc: DocumentItem): string {
   const extension = doc.name.split(".").pop()
   if (extension && extension.length <= 4) {
     return extension.toUpperCase()
   }
-
   return formatMimeLabel(doc.fileType)
 }
 
 function formatMimeLabel(fileType: string): string {
   if (!fileType) return "ARCHIVO"
   const clean = fileType.split("/").pop() ?? fileType
-
   switch (clean) {
     case "pdf":
       return "PDF"
@@ -606,29 +808,5 @@ function formatMimeLabel(fileType: string): string {
       return "ZIP"
     default:
       return clean.replace(/[\.\-_]/g, " ").toUpperCase()
-  }
-}
-
-function resolveDocumentType(doc: DocumentsData["documents"][number]): "images" | "pdf" | "docs" | "spreadsheets" | "others" {
-  const type = doc.fileType?.toLowerCase() ?? ""
-  if (type.includes("image") || /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(doc.name)) return "images"
-  if (type.includes("pdf") || doc.name.toLowerCase().endsWith(".pdf")) return "pdf"
-  if (type.includes("sheet") || /\.(xls|xlsx|csv)$/i.test(doc.name)) return "spreadsheets"
-  if (type.includes("word") || /\.(doc|docx)$/i.test(doc.name)) return "docs"
-  return "others"
-}
-
-function typeLabel(type: ReturnType<typeof resolveDocumentType>): string {
-  switch (type) {
-    case "images":
-      return "Imagen"
-    case "pdf":
-      return "PDF"
-    case "docs":
-      return "Doc"
-    case "spreadsheets":
-      return "Hoja"
-    default:
-      return "Archivo"
   }
 }

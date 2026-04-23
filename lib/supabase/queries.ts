@@ -9,6 +9,30 @@ import { createServerSupabaseClient, resolveDefaultProjectSlug } from "./server"
 type UpdateType = "success" | "info" | "warning" | "message"
 type StatusState = "completed" | "in_progress" | "pending"
 type ActivityStatus = "completed" | "info" | "warning"
+
+/**
+ * Mapea un registro de `project_activity` al tipo de update del dashboard cliente.
+ * Prioriza el `status` (completed/warning) y si no identificamos nada cae a "info".
+ * Eventos de mensajes se marcan como "message" para iconografía específica.
+ */
+function mapActivityToUpdateType(
+  status: string | null | undefined,
+  eventType: string | null | undefined,
+): UpdateType {
+  const normalizedStatus = (status ?? "").toLowerCase()
+  const normalizedEvent = (eventType ?? "").toLowerCase()
+
+  if (normalizedEvent.includes("message") || normalizedEvent === "conversation") return "message"
+  if (normalizedStatus === "completed" || normalizedEvent.includes("completed")) return "success"
+  if (
+    normalizedStatus === "warning" ||
+    normalizedStatus === "error" ||
+    normalizedEvent.includes("overdue") ||
+    normalizedEvent.includes("alert")
+  )
+    return "warning"
+  return "info"
+}
 type DocumentStatus = "aprobado" | "vigente" | "actualizado"
 type MessageSender = "client" | "team_member"
 
@@ -236,12 +260,14 @@ export async function getDashboardData(projectSlug?: string): Promise<DashboardD
         .select("id, metric_code, label, value, sublabel")
         .eq("project_id", data.id)
         .order("sort_order", { ascending: true }),
+      // Leemos de `project_activity` (donde el admin y los eventos automáticos escriben).
+      // La tabla antigua `project_updates` queda como fallback si la nueva no tiene datos.
       supabase
-        .from("project_updates")
-        .select("id, title, description, update_type, occurred_at")
+        .from("project_activity")
+        .select("id, title, description, status, event_type, occurred_at")
         .eq("project_id", data.id)
         .order("occurred_at", { ascending: false })
-        .limit(6),
+        .limit(10),
       supabase
         .from("project_team_members")
         .select("team_member_id, status, team_member:team_members(id, full_name, role, avatar_url)")
@@ -284,7 +310,10 @@ export async function getDashboardData(projectSlug?: string): Promise<DashboardD
         id: update.id,
         title: update.title,
         description: update.description,
-        type: update.update_type as UpdateType,
+        // Mapeo de estados/eventos de project_activity al tipo del dashboard cliente.
+        // project_activity.status puede ser: completed|info|warning|error
+        // project_activity.event_type: task_completed|task_overdue|task_calendar|document_upload|message|...
+        type: mapActivityToUpdateType(update.status, update.event_type),
         occurredAt: update.occurred_at,
       })) ?? [],
     team:

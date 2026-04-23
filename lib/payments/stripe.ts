@@ -6,7 +6,7 @@ import { env } from "../../server/config/env"
 import { createServerSupabaseClient } from "../supabase/server"
 import type { AdminPaymentRecord } from "@app/types/admin"
 
-const stripe = new Stripe(env.stripeSecretKey, {
+const stripe = new Stripe(env.stripeSecretKey || "sk_test_disabled_placeholder", {
   apiVersion: "2025-02-24.acacia",
   appInfo: {
     name: "Terrazea ClientZone",

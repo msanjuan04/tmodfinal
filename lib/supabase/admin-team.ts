@@ -51,7 +51,21 @@ export async function listAdminTeamMembers(filters: AdminTeamListFilters = {}): 
         email,
         phone_number,
         default_status,
-        created_at
+        created_at,
+        project_team_members(
+          assigned_role,
+          status,
+          is_primary,
+          projects(
+            id,
+            name,
+            code,
+            status,
+            progress_percent,
+            estimated_delivery,
+            clients(full_name)
+          )
+        )
       `,
     )
     .order("full_name", { ascending: true })
@@ -69,10 +83,40 @@ export async function listAdminTeamMembers(filters: AdminTeamListFilters = {}): 
     query = query.in("default_status", filters.status)
   }
 
-  const { data, error } = await query
-  if (error) throw error
+  const initialResult = await query
+  let rawData: any[] | null = initialResult.data as any[] | null
+  let queryError = initialResult.error
 
-  const rows = data ?? []
+  // Fallback defensivo: si el join complejo falla (p.ej. por configuración de RLS
+  // o relación no inferida), hacemos la query sin join para no romper la pantalla.
+  if (queryError) {
+    console.warn(
+      "[admin-team] El join con project_team_members falló, reintentando sin join:",
+      queryError,
+    )
+    let fallbackQuery = supabase
+      .from("team_members")
+      .select("id, full_name, role, email, phone_number, default_status, created_at")
+      .order("full_name", { ascending: true })
+    if (filters.search && filters.search.trim().length > 0) {
+      const value = filters.search.trim()
+      fallbackQuery = fallbackQuery.or(
+        [`full_name.ilike.%${value}%`, `email.ilike.%${value}%`].join(","),
+      )
+    }
+    if (filters.roles && filters.roles.length > 0) {
+      fallbackQuery = fallbackQuery.in("role", filters.roles)
+    }
+    if (filters.status && filters.status.length > 0) {
+      fallbackQuery = fallbackQuery.in("default_status", filters.status)
+    }
+    const retry = await fallbackQuery
+    if (retry.error) throw retry.error
+    rawData = (retry.data as any[] | null) ?? []
+    queryError = null
+  }
+
+  const rows: any[] = rawData ?? []
 
   const members: AdminTeamMemberRecord[] = rows.map((row: any) => {
     const assignments = Array.isArray(row.project_team_members) ? row.project_team_members : []
@@ -130,6 +174,52 @@ export interface AdminTeamMemberInput {
   email?: string | null
   phone?: string | null
   status?: string | null
+}
+
+export interface TeamMemberProjectAssignmentInput {
+  projectId: string
+  role: string
+  isPrimary?: boolean
+}
+
+/**
+ * Reemplaza por completo las asignaciones de proyectos de un miembro del equipo.
+ * Es transaccional en el sentido de que primero borra todas las existentes y luego
+ * inserta las nuevas; si algo falla en el insert, el delete ya se ha aplicado,
+ * así que conviene llamarla con el set completo deseado.
+ */
+export async function setTeamMemberProjects(
+  memberId: string,
+  assignments: TeamMemberProjectAssignmentInput[],
+): Promise<void> {
+  const supabase = createServerSupabaseClient()
+
+  // 1) Borrar todas las asignaciones existentes del miembro.
+  const { error: deleteError } = await supabase
+    .from("project_team_members")
+    .delete()
+    .eq("team_member_id", memberId)
+  if (deleteError) throw deleteError
+
+  if (assignments.length === 0) return
+
+  // 2) Deduplicar por projectId (un miembro no puede tener dos roles en el mismo proyecto).
+  const deduped = new Map<string, TeamMemberProjectAssignmentInput>()
+  assignments.forEach((a) => {
+    if (!a.projectId) return
+    deduped.set(a.projectId, a)
+  })
+
+  const rows = Array.from(deduped.values()).map((a) => ({
+    project_id: a.projectId,
+    team_member_id: memberId,
+    assigned_role: a.role || "otro",
+    status: "online",
+    is_primary: a.isPrimary ?? a.role === "director",
+  }))
+
+  const { error: insertError } = await supabase.from("project_team_members").insert(rows)
+  if (insertError) throw insertError
 }
 
 export async function createAdminTeamMember(payload: AdminTeamMemberInput) {

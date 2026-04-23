@@ -18,4 +18,8 @@ export interface ProjectNotification {
 export interface NotificationsFeed {
   notifications: ProjectNotification[]
   unreadCount: number
+  // Total de notificaciones que cumplen el filtro aplicado (no afectado por
+  // limit/offset). Opcional porque el endpoint sólo lo rellena cuando se pide
+  // un listado paginado.
+  totalCount?: number
 }

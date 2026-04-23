@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes, useParams } from "react-router-dom"
 
+import { PoweredByStrip } from "./components/powered-by-strip"
 import { ClientLayout } from "./routes/client/ClientLayout"
 import { ClientDashboardPage } from "./routes/client/Dashboard"
 import { ClientPasswordSetupPage } from "./routes/client/SetupPassword"
@@ -7,6 +8,7 @@ import { LoginPage } from "./routes/login/LoginPage"
 import { ForgotPasswordPage } from "./routes/login/ForgotPasswordPage"
 import { ResetPasswordPage } from "./routes/login/ResetPasswordPage"
 import { RequireAuth } from "./routes/common/RequireAuth"
+import { PasswordGate } from "./routes/common/PasswordGate"
 import { ClientProjectsPage } from "./routes/client/Projects"
 import { ClientCalendarPage } from "./routes/client/Calendar"
 import { ClientDocumentsPage } from "./routes/client/Documents"
@@ -17,6 +19,7 @@ import { AdminLayout } from "./routes/admin/AdminLayout"
 import { AdminOverviewPage } from "./routes/admin/Overview"
 import { AdminCalendarPage } from "./routes/admin/Calendar"
 import { AdminClientsPage } from "./routes/admin/Clients"
+import { AdminClientPage } from "./routes/admin/ClientPage"
 import { AdminProjectsPage } from "./routes/admin/Projects"
 import { AdminDocumentsPage } from "./routes/admin/Documents"
 import { AdminTeamPage } from "./routes/admin/Team"
@@ -25,61 +28,83 @@ import { LandingPage } from "./routes/home/LandingPage"
 import { AdminProjectPage } from "./routes/admin/ProjectPage"
 import { AdminPaymentsPage } from "./routes/admin/Payments"
 import { AdminBudgetsPage } from "./routes/admin/Budgets"
+import { AdminSettingsPage } from "./routes/admin/Settings"
+import { AdminNotificationsPage } from "./routes/admin/Notifications"
 
 export default function App() {
   return (
-    <Routes>
-      <Route path="/" element={<LandingPage />} />
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-      <Route path="/reset-password" element={<ResetPasswordPage />} />
-      <Route
-        path="/client/setup-password"
-        element={
-          <RequireAuth role="client" allowPasswordSetup>
-            <ClientPasswordSetupPage />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/client"
-        element={
-          <RequireAuth role="client">
-            <ClientLayout />
-          </RequireAuth>
-        }
-      >
-        <Route index element={<Navigate to="dashboard" replace />} />
-        <Route path="dashboard" element={<ClientDashboardPage />} />
-        <Route path="projects" element={<ClientProjectsPage />} />
-        <Route path="calendar" element={<ClientCalendarPage />} />
-        <Route path="documents" element={<ClientDocumentsPage />} />
-        <Route path="messages" element={<ClientMessagesPage />} />
-        <Route path="payments" element={<ClientPaymentsPage />} />
-        <Route path="profile" element={<ClientProfilePage />} />
-      </Route>
-      <Route
-        path="/dashboard"
-        element={
-          <RequireAuth role="admin">
-            <AdminLayout />
-          </RequireAuth>
-        }
-      >
-        <Route index element={<AdminOverviewPage />} />
-        <Route path="calendar" element={<AdminCalendarPage />} />
-        <Route path="clients" element={<AdminClientsPage />} />
-        <Route path="team" element={<AdminTeamPage />} />
-        <Route path="projects/:projectSlug" element={<AdminProjectPage />} />
-        <Route path="projects" element={<AdminProjectsPage />} />
-        <Route path="budgets" element={<AdminBudgetsPage />} />
-        <Route path="payments" element={<AdminPaymentsPage />} />
-        <Route path="documents" element={<AdminDocumentsPage />} />
-        <Route path="messages" element={<AdminMessagesPage />} />
-      </Route>
-      <Route path="/admin/projects/:projectRef" element={<LegacyAdminProjectRedirect />} />
-      <Route path="*" element={<Navigate to="/login" replace />} />
-    </Routes>
+    <>
+      <Routes>
+        <Route path="/" element={<LandingPage />} />
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
+        <Route
+          path="/client/setup-password"
+          element={
+            <RequireAuth role="client" allowPasswordSetup>
+              <ClientPasswordSetupPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/client"
+          element={
+            <RequireAuth role="client">
+              <ClientLayout />
+            </RequireAuth>
+          }
+        >
+          <Route index element={<Navigate to="dashboard" replace />} />
+          <Route path="dashboard" element={<ClientDashboardPage />} />
+          <Route path="projects" element={<ClientProjectsPage />} />
+          <Route path="calendar" element={<ClientCalendarPage />} />
+          <Route path="documents" element={<ClientDocumentsPage />} />
+          <Route path="messages" element={<ClientMessagesPage />} />
+          <Route path="payments" element={<ClientPaymentsPage />} />
+          <Route path="profile" element={<ClientProfilePage />} />
+        </Route>
+        <Route
+          path="/dashboard"
+          element={
+            <RequireAuth role="admin">
+              <AdminLayout />
+            </RequireAuth>
+          }
+        >
+          <Route index element={<AdminOverviewPage />} />
+          <Route path="calendar" element={<AdminCalendarPage />} />
+          <Route path="clients/:clientId" element={<AdminClientPage />} />
+          <Route path="clients" element={<AdminClientsPage />} />
+          <Route path="team" element={<AdminTeamPage />} />
+          <Route path="projects/:projectSlug" element={<AdminProjectPage />} />
+          <Route path="projects" element={<AdminProjectsPage />} />
+          <Route
+            path="budgets"
+            element={
+              <PasswordGate section="budgets" sectionName="Presupuestos">
+                <AdminBudgetsPage />
+              </PasswordGate>
+            }
+          />
+          <Route
+            path="payments"
+            element={
+              <PasswordGate section="payments" sectionName="Facturación">
+                <AdminPaymentsPage />
+              </PasswordGate>
+            }
+          />
+          <Route path="documents" element={<AdminDocumentsPage />} />
+          <Route path="messages" element={<AdminMessagesPage />} />
+          <Route path="settings" element={<AdminSettingsPage />} />
+          <Route path="notifications" element={<AdminNotificationsPage />} />
+        </Route>
+        <Route path="/admin/projects/:projectRef" element={<LegacyAdminProjectRedirect />} />
+        <Route path="*" element={<Navigate to="/login" replace />} />
+      </Routes>
+      <PoweredByStrip />
+    </>
   )
 }
 

@@ -8,3 +8,4 @@ dist-server/
 .DS_Store
 *.zip
 build-*.zip
+.claude/

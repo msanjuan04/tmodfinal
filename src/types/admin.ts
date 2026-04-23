@@ -251,6 +251,11 @@ export interface AdminProjectTask {
   startDate: string | null
   dueDate: string | null
   position: number
+  // Flags para marcar una tarea como hito del proyecto y decidir si aparece
+  // en el calendario del cliente. Opcionales por compatibilidad con filas
+  // antiguas sin la columna.
+  isMilestone?: boolean
+  showInCalendar?: boolean
   createdAt: string
   updatedAt: string
 }

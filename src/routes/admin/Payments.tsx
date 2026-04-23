@@ -461,19 +461,27 @@ export function AdminPaymentsPage() {
 
   return (
     <div className="space-y-6 pb-16">
-      <Card className="rounded-[1.5rem] border-[#E8E6E0] bg-white px-6 py-6 shadow-sm">
-        <CardHeader className="p-0 pb-6">
-          <CardTitle className="font-heading text-3xl text-[#2F4F4F]">Pagos & facturación</CardTitle>
-          <CardDescription className="text-sm text-[#6B7280]">
-            Centraliza las propuestas de pago y consulta su estado antes de habilitar el cobro en Stripe.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 p-0">
+      <section className="rounded-[1.75rem] border border-[#E8E6E0] bg-white/95 p-6 shadow-apple-md lg:p-8">
+        <div className="flex items-center gap-2">
+          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#F4F1EA] text-[#2F4F4F]">
+            <CreditCard className="h-4 w-4" />
+          </div>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-[#C6B89E]">
+            Facturación
+          </p>
+        </div>
+        <h1 className="mt-3 font-heading text-3xl font-semibold leading-tight text-[#2F4F4F] sm:text-4xl">
+          Pagos &amp; facturación
+        </h1>
+        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-[#6B7280]">
+          Centraliza las propuestas de pago y consulta su estado antes de habilitar el cobro en Stripe.
+        </p>
+        <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {summaryCards.map((card) => (
             <PaymentSummaryCard key={card.label} card={card} />
           ))}
-        </CardContent>
-      </Card>
+        </div>
+      </section>
 
       <section className="grid gap-6 lg:grid-cols-[2fr,1fr]">
         <Card className="rounded-[1.5rem] border-[#E8E6E0] bg-white/90 shadow-apple-md">

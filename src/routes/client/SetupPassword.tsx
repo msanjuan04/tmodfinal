@@ -40,7 +40,11 @@ export function ClientPasswordSetupPage() {
     setSubmitting(true)
 
     try {
-      await setupClientPassword(trimmed)
+      const result = await setupClientPassword(trimmed)
+      if (!result?.success) {
+        setError(result?.message ?? "No pudimos guardar tu contraseña. Inténtalo más tarde.")
+        return
+      }
       toast.success("¡Listo! Ya puedes acceder con tu nueva contraseña.")
       await refresh()
       navigate(nextPath, { replace: true })

@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from "react"
 import { useSearchParams } from "react-router-dom"
-
-import { ProjectCalendar } from "@/components/calendar/project-calendar"
-import type { ProjectEvent } from "@app/types/events"
-import { fetchClientProjectEvents } from "@app/lib/api/events"
-import { Card } from "@/components/ui/card"
 import { differenceInCalendarDays, format, parseISO } from "date-fns"
 import { es } from "date-fns/locale"
+import { CalendarDays, Clock } from "lucide-react"
+
+import { ClientTaskCalendar } from "@/components/calendar/client-task-calendar"
+import type { ProjectEvent } from "@app/types/events"
+import { fetchClientProjectEvents } from "@app/lib/api/events"
 
 import { useClientRouteContext } from "./ClientLayout"
 
@@ -53,24 +53,32 @@ export function ClientCalendarPage() {
 
   if (!activeProjectSlug) {
     return (
-      <div className="rounded-[1.5rem] border border-[#E8E6E0] bg-white/80 p-10 shadow-apple-xl">
-        <h2 className="font-heading text-2xl font-semibold text-[#2F4F4F]">Tu calendario Terrazea</h2>
-        <p className="mt-2 text-sm text-[#6B7280]">Cuando tu proyecto esté activo verás aquí todas las visitas y entregas.</p>
+      <div className="rounded-[1.75rem] border border-[#E8E6E0] bg-white/90 p-10 shadow-apple-md">
+        <p className="text-xs uppercase tracking-[0.3em] text-[#C6B89E]">Tu agenda Terrazea</p>
+        <h2 className="mt-2 font-heading text-2xl font-semibold text-[#2F4F4F]">
+          Calendario del proyecto
+        </h2>
+        <p className="mt-2 text-sm text-[#6B7280]">
+          Cuando tu proyecto esté activo verás aquí todas las visitas, entregas y hitos.
+        </p>
       </div>
     )
   }
 
   if (loading) {
     return (
-      <div className="rounded-[1.5rem] border border-[#E8E6E0] bg-white/80 p-10 text-center shadow-apple-xl">
-        <p className="text-sm font-medium text-[#6B7280]">Cargando tu calendario Terrazea…</p>
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <div className="flex items-center gap-2 text-sm text-[#6B7280]">
+          <CalendarDays className="h-4 w-4 animate-pulse text-[#2F4F4F]" />
+          Cargando tu calendario Terrazea…
+        </div>
       </div>
     )
   }
 
   if (error) {
     return (
-      <div className="rounded-[1.5rem] border border-[#FCA5A5] bg-[#FEF2F2] p-10 text-center shadow-apple-md">
+      <div className="rounded-[1.75rem] border border-[#FCA5A5] bg-[#FEF2F2] p-10 text-center shadow-apple-md">
         <h2 className="font-heading text-xl font-semibold text-[#B91C1C]">No pudimos cargar el calendario</h2>
         <p className="mt-2 text-sm text-[#B91C1C]">{error}</p>
       </div>
@@ -96,71 +104,58 @@ export function ClientCalendarPage() {
   const nextEventStart = nextEventEntry?.start ?? null
 
   const nextEventLabel = nextEvent && nextEventStart
-    ? `${nextEvent.isAllDay ? format(nextEventStart, "EEEE d 'de' MMMM", { locale: es }) + " · Todo el día" : format(nextEventStart, "EEEE d 'de' MMMM · HH:mm", { locale: es })}`
-    : "Sin eventos próximos programados."
+    ? nextEvent.isAllDay
+      ? `${format(nextEventStart, "EEEE d 'de' MMMM", { locale: es })} · Todo el día`
+      : format(nextEventStart, "EEEE d 'de' MMMM · HH:mm", { locale: es })
+    : null
 
   const projectSummary = projects.find((project) => project.slug === activeProjectSlug) ?? null
-
-  const headerContent = upcomingEvents.length > 0 ? (
-    <div className="rounded-[1.25rem] border border-[#E8E6E0] bg-[#FDFCF9] p-4 text-sm text-[#4B5563] shadow-sm">
-      <p className="text-xs uppercase tracking-[0.3em] text-[#C6B89E]">Próximas citas</p>
-      <ul className="mt-3 space-y-2 text-xs">
-        {upcomingEvents.slice(0, 3).map(({ event, start }) => (
-          <li key={event.id} className="flex items-center justify-between gap-3">
-            <span className="font-medium text-[#2F4F4F]">{event.title}</span>
-            <span className="text-[#6B7280]">{format(start, "d MMM · HH:mm", { locale: es })}</span>
-          </li>
-        ))}
-      </ul>
-    </div>
-  ) : (
-    <div className="rounded-[1.25rem] border border-dashed border-[#E8E6E0] bg-[#F8F7F4] p-4 text-sm text-[#6B7280]">
-      En cuanto programemos visitas o entregas aparecerán aquí para que puedas planificarte con calma.
-    </div>
-  )
+  const title = projectSummary ? projectSummary.name : activeProjectName ?? "Calendario del proyecto"
 
   return (
     <div className="space-y-6 pb-16">
-      <Card className="rounded-[1.5rem] border-[#E8E6E0] bg-white/90 px-6 py-6 shadow-apple-xl">
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <p className="text-xs uppercase tracking-[0.3em] text-[#C6B89E]">Tu agenda Terrazea</p>
-            <h1 className="font-heading text-3xl text-[#2F4F4F] lg:text-4xl">
-              {projectSummary ? projectSummary.name : activeProjectName ?? "Calendario del proyecto"}
-            </h1>
+      {/* Header idéntico al admin en estética */}
+      <section className="rounded-[1.75rem] border border-[#E8E6E0] bg-white/95 px-6 py-6 shadow-apple-md lg:px-8">
+        <div className="space-y-3">
+          <p className="text-xs uppercase tracking-[0.3em] text-[#C6B89E]">Tu agenda Terrazea</p>
+          <div className="space-y-1">
+            <h1 className="font-heading text-3xl font-semibold text-[#2F4F4F] lg:text-4xl">{title}</h1>
             <p className="max-w-2xl text-sm text-[#6B7280]">
-              Consulta visitas, entregas y hitos importantes. Te avisaremos con tiempo para que no se te escape nada.
+              Consulta visitas, entregas e hitos importantes de tu proyecto. Te avisaremos con tiempo para que no se te escape nada.
             </p>
           </div>
-          <div className="grid gap-3 sm:grid-cols-3">
-            <div className="rounded-[1.25rem] border border-[#E8E6E0] bg-[#F8F7F4] p-4 text-sm text-[#4B5563]">
-              <p className="text-xs uppercase tracking-[0.3em] text-[#C6B89E]">Eventos totales</p>
-              <p className="mt-2 text-2xl font-semibold text-[#2F4F4F]">{events.length}</p>
-              <p className="mt-1 text-xs text-[#6B7280]">Incluye visitas, entregas y reuniones registradas hasta hoy.</p>
-            </div>
-            <div className="rounded-[1.25rem] border border-[#E8E6E0] bg-[#F8F7F4] p-4 text-sm text-[#4B5563]">
-              <p className="text-xs uppercase tracking-[0.3em] text-[#C6B89E]">Próximos 7 días</p>
-              <p className="mt-2 text-2xl font-semibold text-[#2F4F4F]">{upcomingInSevenDays.length}</p>
-              <p className="mt-1 text-xs text-[#6B7280]">Eventos programados durante la próxima semana.</p>
-            </div>
-            <div className="rounded-[1.25rem] border border-[#E8E6E0] bg-[#F8F7F4] p-4 text-sm text-[#4B5563]">
-              <p className="text-xs uppercase tracking-[0.3em] text-[#C6B89E]">Próximo evento</p>
-              <p className="mt-2 line-clamp-1 text-sm font-medium text-[#2F4F4F]">
-                {nextEvent ? nextEvent.title : "Sin eventos programados"}
-              </p>
-              <p className="mt-1 text-xs text-[#6B7280]">{nextEventLabel}</p>
-            </div>
+          <div className="flex flex-wrap gap-2 pt-1">
+            <InlineStat icon={CalendarDays} label="Próximos 7 días" value={upcomingInSevenDays.length} />
+            {nextEventLabel ? (
+              <InlineStat icon={Clock} label="Siguiente" value={nextEventLabel} textValue />
+            ) : (
+              <InlineStat icon={Clock} label="Siguiente" value="Sin eventos próximos" textValue />
+            )}
           </div>
         </div>
-      </Card>
+      </section>
 
-      <ProjectCalendar
-        events={events}
-        projectName={activeProjectName}
-        showVisibility={false}
-        headerContent={headerContent}
-        showAssistant={false}
-      />
+      <ClientTaskCalendar events={events} projectName={activeProjectName ?? projectSummary?.name} />
+    </div>
+  )
+}
+
+function InlineStat({
+  icon: Icon,
+  label,
+  value,
+  textValue,
+}: {
+  icon: typeof CalendarDays
+  label: string
+  value: string | number
+  textValue?: boolean
+}) {
+  return (
+    <div className="inline-flex items-center gap-2 rounded-full border border-[#E8E6E0] bg-[#F8F7F4] px-3 py-1.5 text-xs text-[#4B5563]">
+      <Icon className="h-3.5 w-3.5 text-[#C6B89E]" />
+      <span className="font-medium text-[#6B7280]">{label}:</span>
+      <span className={`font-semibold text-[#2F4F4F] ${textValue ? "capitalize" : ""}`}>{value}</span>
     </div>
   )
 }

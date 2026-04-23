@@ -7,11 +7,13 @@ import { format, parseISO, isBefore, isValid } from "date-fns"
 import { es } from "date-fns/locale"
 import {
   AlertTriangle,
+  CalendarClock,
   CalendarDays,
   Check,
   ChevronDown,
   ClipboardList,
   Filter,
+  Flag,
   LayoutGrid,
   List,
   Loader2,
@@ -64,6 +66,7 @@ import {
 } from "@app/lib/api/admin"
 
 type ViewMode = "kanban" | "table"
+type TaskDensity = "comfy" | "compact"
 
 const STATUS_COLUMNS: Array<{ id: ProjectTaskStatus; title: string; description: string }> = [
   { id: "todo", title: "Por hacer", description: "Tareas pendientes de iniciar" },
@@ -120,6 +123,8 @@ interface TaskFormState {
   assigneeId: string | ""
   startDate: string
   dueDate: string
+  isMilestone: boolean
+  showInCalendar: boolean
 }
 
 const DEFAULT_FORM: TaskFormState = {
@@ -130,6 +135,8 @@ const DEFAULT_FORM: TaskFormState = {
   assigneeId: "",
   startDate: "",
   dueDate: "",
+  isMilestone: false,
+  showInCalendar: true,
 }
 
 export function ProjectTasksManager({
@@ -152,7 +159,13 @@ export function ProjectTasksManager({
   const [dueFrom, setDueFrom] = useState<string>("")
   const [dueTo, setDueTo] = useState<string>("")
   const [page, setPage] = useState(1)
-  const [pageSize] = useState(20)
+  // Page size alto para que se vean TODAS las tareas del proyecto sin paginar.
+  // El backend permite hasta 2000; proyectos con más de eso paginarían con los controles existentes.
+  const [pageSize] = useState(500)
+  // Densidad del tablero (cómodo = tarjetas grandes, compacto = más tareas visibles)
+  const [density, setDensity] = useState<TaskDensity>("comfy")
+  // Columnas colapsadas del kanban (persistentes entre renderizados)
+  const [collapsedColumns, setCollapsedColumns] = useState<Set<ProjectTaskStatus>>(() => new Set())
 
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -334,6 +347,8 @@ export function ProjectTasksManager({
         assigneeId: form.assigneeId || null,
         startDate: form.startDate || null,
         dueDate: form.dueDate || null,
+        isMilestone: form.isMilestone,
+        showInCalendar: form.showInCalendar,
       })
       toast.success("Tarea creada correctamente")
       setTaskFormOpen(false)
@@ -359,6 +374,8 @@ export function ProjectTasksManager({
         assigneeId: patch.assigneeId ?? undefined,
         startDate: patch.startDate ?? undefined,
         dueDate: patch.dueDate ?? undefined,
+        isMilestone: patch.isMilestone,
+        showInCalendar: patch.showInCalendar,
       })
       await fetchTasks()
     } catch (err) {
@@ -600,6 +617,8 @@ export function ProjectTasksManager({
                               assigneeId: editingTask.assigneeId ?? "",
                               startDate: editingTask.startDate ?? "",
                               dueDate: editingTask.dueDate ?? "",
+                              isMilestone: editingTask.isMilestone ?? false,
+                              showInCalendar: editingTask.showInCalendar ?? true,
                             }
                           : DEFAULT_FORM
                       }
@@ -613,6 +632,8 @@ export function ProjectTasksManager({
                             assigneeId: values.assigneeId || null,
                             startDate: values.startDate || null,
                             dueDate: values.dueDate || null,
+                            isMilestone: values.isMilestone,
+                            showInCalendar: values.showInCalendar,
                           })
                           setTaskFormOpen(false)
                           setEditingTask(null)
@@ -650,6 +671,13 @@ export function ProjectTasksManager({
       <FiltersBar
         viewMode={viewMode}
         onViewChange={setViewMode}
+        density={density}
+        onDensityChange={setDensity}
+        collapsedCount={collapsedColumns.size}
+        onExpandAllColumns={() => setCollapsedColumns(new Set())}
+        onCollapseAllColumns={() =>
+          setCollapsedColumns(new Set(STATUS_COLUMNS.map((c) => c.id)))
+        }
         search={search}
         onSearchChange={setSearch}
         statusFilter={statusFilter}
@@ -760,6 +788,16 @@ export function ProjectTasksManager({
           isOverdue={isOverdue}
           refreshing={refreshing}
           reorderDisabled={usesFallbackTasks}
+          density={density}
+          collapsedColumns={collapsedColumns}
+          onToggleColumn={(columnId) =>
+            setCollapsedColumns((prev) => {
+              const next = new Set(prev)
+              if (next.has(columnId)) next.delete(columnId)
+              else next.add(columnId)
+              return next
+            })
+          }
         />
       ) : (
         <TaskTable
@@ -861,6 +899,11 @@ function SummaryCard({
 interface FiltersBarProps {
   viewMode: ViewMode
   onViewChange: (view: ViewMode) => void
+  density: TaskDensity
+  onDensityChange: (density: TaskDensity) => void
+  collapsedCount: number
+  onExpandAllColumns: () => void
+  onCollapseAllColumns: () => void
   search: string
   onSearchChange: (value: string) => void
   statusFilter: ProjectTaskStatus[]
@@ -881,6 +924,11 @@ interface FiltersBarProps {
 function FiltersBar({
   viewMode,
   onViewChange,
+  density,
+  onDensityChange,
+  collapsedCount,
+  onExpandAllColumns,
+  onCollapseAllColumns,
   search,
   onSearchChange,
   statusFilter,
@@ -996,6 +1044,55 @@ function FiltersBar({
               Tabla
             </button>
           </div>
+
+          {/* Controles sólo para kanban: densidad + colapsar columnas */}
+          {viewMode === "kanban" ? (
+            <>
+              <div className="inline-flex rounded-full border border-[#E8E6E0] bg-[#F8F7F4] p-1" title="Tamaño de las tarjetas">
+                <button
+                  type="button"
+                  onClick={() => onDensityChange("comfy")}
+                  className={`flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-semibold transition ${
+                    density === "comfy" ? "bg-white text-[#2F4F4F]" : "text-[#6B7280]"
+                  }`}
+                >
+                  <Layers className="h-3.5 w-3.5" />
+                  Cómodo
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onDensityChange("compact")}
+                  className={`flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-semibold transition ${
+                    density === "compact" ? "bg-white text-[#2F4F4F]" : "text-[#6B7280]"
+                  }`}
+                >
+                  <List className="h-3.5 w-3.5" />
+                  Compacto
+                </button>
+              </div>
+              {collapsedCount > 0 ? (
+                <button
+                  type="button"
+                  onClick={onExpandAllColumns}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-[#E8E6E0] bg-white px-3 py-2 text-xs font-semibold text-[#2F4F4F] hover:bg-[#F4F1EA]"
+                  title="Expandir todas las columnas"
+                >
+                  <ChevronDown className="h-3.5 w-3.5 rotate-180" />
+                  Expandir todas ({collapsedCount})
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={onCollapseAllColumns}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-[#E8E6E0] bg-white px-3 py-2 text-xs font-semibold text-[#6B7280] hover:bg-[#F4F1EA] hover:text-[#2F4F4F]"
+                  title="Colapsar todas las columnas"
+                >
+                  <ChevronDown className="h-3.5 w-3.5 -rotate-90" />
+                  Colapsar todas
+                </button>
+              )}
+            </>
+          ) : null}
         </div>
       </div>
 
@@ -1058,6 +1155,9 @@ function KanbanBoard({
   isOverdue,
   refreshing = false,
   reorderDisabled = false,
+  density = "comfy",
+  collapsedColumns,
+  onToggleColumn,
 }: {
   columns: Array<{ id: ProjectTaskStatus; title: string; description: string }>
   groupedTasks: Record<ProjectTaskStatus, AdminProjectTask[]>
@@ -1071,7 +1171,16 @@ function KanbanBoard({
   isOverdue: (task: AdminProjectTask) => boolean
   refreshing?: boolean
   reorderDisabled?: boolean
+  density?: TaskDensity
+  collapsedColumns: Set<ProjectTaskStatus>
+  onToggleColumn: (columnId: ProjectTaskStatus) => void
 }) {
+  const compact = density === "compact"
+  const cardPadding = compact ? "p-2.5" : "p-4"
+  const cardGap = compact ? "gap-1.5" : "gap-3"
+  const cardTitleSize = compact ? "text-xs" : "text-sm"
+  const chipSize = compact ? "text-[10px]" : "text-xs"
+
   return (
     <Card className="border-[#E8E6E0] bg-white/90">
       <CardContent className="relative overflow-x-auto py-6">
@@ -1090,105 +1199,193 @@ function KanbanBoard({
           </div>
         ) : null}
         <DragDropContext onDragEnd={onDragEnd}>
-          <div className="grid min-w-[960px] gap-4 lg:grid-cols-5">
-            {columns.map((column) => (
+          {/* Altura fija del board: columnas hacen scroll interno para no empujar la página */}
+          <div className="grid min-w-[960px] gap-4 lg:grid-cols-5" style={{ minHeight: 400 }}>
+            {columns.map((column) => {
+              const isCollapsed = collapsedColumns.has(column.id)
+              const taskCount = groupedTasks[column.id].length
+
+              if (isCollapsed) {
+                // Columna colapsada: solo muestra la cabecera estrecha, sin scroll
+                return (
+                  <div
+                    key={column.id}
+                    className="flex flex-col items-start gap-2 rounded-[1.25rem] border border-[#E8E6E0] bg-[#F8F7F4] p-3"
+                    style={{ maxHeight: 80 }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => onToggleColumn(column.id)}
+                      className="flex w-full items-center justify-between gap-2 rounded-full bg-white px-3 py-1 text-xs font-semibold text-[#2F4F4F] shadow-apple-sm hover:bg-[#F4F1EA]"
+                    >
+                      <span className="flex items-center gap-2">
+                        <ChevronDown className="h-3 w-3 -rotate-90" />
+                        {column.title}
+                      </span>
+                      <span className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[#2F4F4F] px-1.5 text-[10px] font-bold text-white">
+                        {taskCount}
+                      </span>
+                    </button>
+                  </div>
+                )
+              }
+
+              return (
               <Droppable droppableId={column.id} key={column.id} isDropDisabled={reorderDisabled}>
                 {(provided) => (
                   <div
                     ref={provided.innerRef}
                     {...provided.droppableProps}
-                    className="flex min-h-[320px] flex-col gap-3 rounded-[1.25rem] border border-[#E8E6E0] bg-[#F8F7F4] p-4"
+                    className="flex flex-col gap-3 rounded-[1.25rem] border border-[#E8E6E0] bg-[#F8F7F4] p-3"
+                    style={{ height: "calc(100vh - 360px)", minHeight: 480, maxHeight: 720 }}
                   >
-                    <div>
-                      <p className="font-heading text-sm font-semibold text-[#2F4F4F]">
-                        {column.title} ({groupedTasks[column.id].length})
-                      </p>
-                      <p className="text-xs text-[#6B7280]">{column.description}</p>
+                    {/* Header pegado arriba con botón colapsar */}
+                    <div className="sticky top-0 z-10 -mx-3 -mt-3 flex items-start justify-between gap-2 rounded-t-[1.25rem] border-b border-[#E8E6E0] bg-[#F8F7F4]/95 px-3 pb-2 pt-3 backdrop-blur">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <p className="font-heading text-sm font-semibold text-[#2F4F4F]">
+                            {column.title}
+                          </p>
+                          <span className="inline-flex h-4 min-w-[18px] items-center justify-center rounded-full bg-[#2F4F4F] px-1 text-[10px] font-bold text-white">
+                            {taskCount}
+                          </span>
+                        </div>
+                        <p className="truncate text-[11px] text-[#6B7280]">{column.description}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => onToggleColumn(column.id)}
+                        aria-label="Colapsar columna"
+                        title="Colapsar columna"
+                        className="shrink-0 rounded-full p-1 text-[#9CA3AF] transition hover:bg-white hover:text-[#2F4F4F]"
+                      >
+                        <ChevronDown className="h-3.5 w-3.5" />
+                      </button>
                     </div>
-                    {groupedTasks[column.id].map((task, index) => (
-                      <Draggable draggableId={task.id} index={index} key={task.id} isDragDisabled={reorderDisabled}>
-                        {(dragProvided, snapshot) => (
-                          <div
-                            ref={dragProvided.innerRef}
-                            {...dragProvided.draggableProps}
-                            {...dragProvided.dragHandleProps}
-                            className={`rounded-[1rem] border border-[#E8E6E0] bg-white p-4 shadow-apple transition ${
-                              snapshot.isDragging ? "ring-2 ring-[#2F4F4F]" : ""
-                            } ${isOverdue(task) ? "border-[#F87171]" : ""}`}
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <div>
-                                <h3 className="font-heading text-sm font-semibold text-[#2F4F4F]">{task.title}</h3>
-                                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-[#6B7280]">
-                                  <Badge className={STATUS_BADGES[task.status as ProjectTaskStatus]}>
-                                    {STATUS_LABELS[task.status as ProjectTaskStatus]}
-                                  </Badge>
-                                  {task.assigneeName ? (
-                                    <span className="rounded-full bg-[#E8E6E0] px-2 py-0.5 text-xs text-[#4B5563]">
-                                      {task.assigneeName}
-                                    </span>
-                                  ) : null}
+
+                    {/* Contenido scrollable dentro de la columna */}
+                    <div className={`flex flex-1 flex-col overflow-y-auto pr-1 ${cardGap}`}>
+                      {taskCount === 0 ? (
+                        <div className="flex flex-1 items-center justify-center rounded-[1rem] border border-dashed border-[#E8E6E0] bg-white/50 px-3 py-6 text-center text-[11px] text-[#9CA3AF]">
+                          Arrastra tareas aquí o crea una nueva
+                        </div>
+                      ) : null}
+                      {groupedTasks[column.id].map((task, index) => (
+                        <Draggable draggableId={task.id} index={index} key={task.id} isDragDisabled={reorderDisabled}>
+                          {(dragProvided, snapshot) => (
+                            <div
+                              ref={dragProvided.innerRef}
+                              {...dragProvided.draggableProps}
+                              {...dragProvided.dragHandleProps}
+                              className={`rounded-[1rem] border border-[#E8E6E0] bg-white ${cardPadding} shadow-apple transition ${
+                                snapshot.isDragging ? "ring-2 ring-[#2F4F4F]" : ""
+                              } ${isOverdue(task) ? "border-[#F87171]" : ""}`}
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="min-w-0 flex-1">
+                                  <h3 className={`flex items-center gap-1.5 font-heading font-semibold text-[#2F4F4F] ${cardTitleSize}`}>
+                                    {task.isMilestone ? (
+                                      <Flag className="h-3 w-3 shrink-0 text-[#B45309]" aria-label="Hito" />
+                                    ) : null}
+                                    <span className={compact ? "truncate" : ""}>{task.title}</span>
+                                  </h3>
+                                  {!compact ? (
+                                    <div className={`mt-2 flex flex-wrap items-center gap-1.5 ${chipSize} text-[#6B7280]`}>
+                                      <Badge className={STATUS_BADGES[task.status as ProjectTaskStatus]}>
+                                        {STATUS_LABELS[task.status as ProjectTaskStatus]}
+                                      </Badge>
+                                      {task.isMilestone ? (
+                                        <span className="inline-flex items-center gap-1 rounded-full bg-[#FEF3C7] px-2 py-0.5 font-medium text-[#92400E]">
+                                          <Flag className="h-3 w-3" /> Hito
+                                        </span>
+                                      ) : null}
+                                      {!task.showInCalendar ? (
+                                        <span className="inline-flex items-center gap-1 rounded-full bg-[#E5E7EB] px-2 py-0.5 text-[#4B5563]">
+                                          <CalendarClock className="h-3 w-3" /> Sin calendario
+                                        </span>
+                                      ) : null}
+                                      {task.assigneeName ? (
+                                        <span className="rounded-full bg-[#E8E6E0] px-2 py-0.5 text-[#4B5563]">
+                                          {task.assigneeName}
+                                        </span>
+                                      ) : null}
+                                    </div>
+                                  ) : (
+                                    // En compacto: sólo mostramos responsable y flags mínimos
+                                    <div className="mt-1 flex flex-wrap items-center gap-1 text-[10px] text-[#6B7280]">
+                                      {task.assigneeName ? <span className="truncate">{task.assigneeName}</span> : null}
+                                      {!task.showInCalendar ? <CalendarClock className="h-3 w-3 text-[#9CA3AF]" /> : null}
+                                    </div>
+                                  )}
                                 </div>
-                              </div>
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <button className="rounded-full p-1 text-[#6B7280] transition hover:bg-[#F3F4F6]">
-                                    <MoreVertical className="h-4 w-4" />
-                                  </button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end" className="w-48">
-                                  <DropdownMenuLabel>Acciones</DropdownMenuLabel>
-                                  <DropdownMenuItem onSelect={() => onEdit(task)}>
-                                    <PenSquare className="mr-2 h-3.5 w-3.5" />
-                                    Editar
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem onSelect={() => onDuplicate(task)}>
-                                    <ClipboardList className="mr-2 h-3.5 w-3.5" />
-                                    Duplicar
-                                  </DropdownMenuItem>
-                                  {task.status !== "done" ? (
-                                    <DropdownMenuItem onSelect={() => onMarkDone(task.id)}>
-                                      <Check className="mr-2 h-3.5 w-3.5" />
-                                      Marcar como hecha
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <button className="shrink-0 rounded-full p-1 text-[#6B7280] transition hover:bg-[#F3F4F6]">
+                                      <MoreVertical className="h-3.5 w-3.5" />
+                                    </button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end" className="w-48">
+                                    <DropdownMenuLabel>Acciones</DropdownMenuLabel>
+                                    <DropdownMenuItem onSelect={() => onEdit(task)}>
+                                      <PenSquare className="mr-2 h-3.5 w-3.5" />
+                                      Editar
                                     </DropdownMenuItem>
-                                  ) : null}
-                                  <DropdownMenuItem onSelect={() => onAddToCalendar(task)}>
-                                    <CalendarDays className="mr-2 h-3.5 w-3.5" />
-                                    Añadir al calendario
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem onSelect={() => onActivity(task)}>
-                                    <ClipboardList className="mr-2 h-3.5 w-3.5" />
-                                    Ver historial
-                                  </DropdownMenuItem>
-                                  <DropdownMenuSeparator />
-                                  <DropdownMenuItem
-                                    onSelect={() => onDelete(task.id)}
-                                    className="text-[#B91C1C] focus:text-[#B91C1C]"
-                                  >
-                                    <Trash2 className="mr-2 h-3.5 w-3.5" />
-                                    Eliminar
-                                  </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </div>
-                            <div className="mt-3 text-xs text-[#6B7280]">
-                              {task.dueDate ? (
-                                <p className={isOverdue(task) ? "font-semibold text-[#B91C1C]" : ""}>
-                                  Vence {format(parseISO(task.dueDate), "d MMM yyyy", { locale: es })}
-                                </p>
-                              ) : (
-                                <p>Sin fecha límite</p>
+                                    <DropdownMenuItem onSelect={() => onDuplicate(task)}>
+                                      <ClipboardList className="mr-2 h-3.5 w-3.5" />
+                                      Duplicar
+                                    </DropdownMenuItem>
+                                    {task.status !== "done" ? (
+                                      <DropdownMenuItem onSelect={() => onMarkDone(task.id)}>
+                                        <Check className="mr-2 h-3.5 w-3.5" />
+                                        Marcar como hecha
+                                      </DropdownMenuItem>
+                                    ) : null}
+                                    <DropdownMenuItem onSelect={() => onAddToCalendar(task)}>
+                                      <CalendarDays className="mr-2 h-3.5 w-3.5" />
+                                      Añadir al calendario
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem onSelect={() => onActivity(task)}>
+                                      <ClipboardList className="mr-2 h-3.5 w-3.5" />
+                                      Ver historial
+                                    </DropdownMenuItem>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem
+                                      onSelect={() => onDelete(task.id)}
+                                      className="text-[#B91C1C] focus:text-[#B91C1C]"
+                                    >
+                                      <Trash2 className="mr-2 h-3.5 w-3.5" />
+                                      Eliminar
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </div>
+                              {!compact && (
+                                <div className="mt-2 text-[11px] text-[#6B7280]">
+                                  {task.dueDate ? (
+                                    <p className={isOverdue(task) ? "font-semibold text-[#B91C1C]" : ""}>
+                                      Vence {format(parseISO(task.dueDate), "d MMM yyyy", { locale: es })}
+                                    </p>
+                                  ) : (
+                                    <p>Sin fecha límite</p>
+                                  )}
+                                </div>
                               )}
+                              {compact && task.dueDate ? (
+                                <p className={`mt-1 text-[10px] ${isOverdue(task) ? "font-semibold text-[#B91C1C]" : "text-[#9CA3AF]"}`}>
+                                  {format(parseISO(task.dueDate), "d MMM", { locale: es })}
+                                </p>
+                              ) : null}
                             </div>
-                          </div>
-                        )}
-                      </Draggable>
-                    ))}
-                    {provided.placeholder}
+                          )}
+                        </Draggable>
+                      ))}
+                      {provided.placeholder}
+                    </div>
                   </div>
                 )}
               </Droppable>
-            ))}
+              )
+            })}
           </div>
         </DragDropContext>
       </CardContent>
@@ -1303,9 +1500,18 @@ function TaskTable({
                     <button
                       type="button"
                       onClick={() => onEdit(task)}
-                      className="text-left font-medium text-[#2F4F4F] hover:underline"
+                      className="flex items-center gap-1.5 text-left font-medium text-[#2F4F4F] hover:underline"
                     >
-                      {task.title}
+                      {task.isMilestone ? (
+                        <Flag className="h-3.5 w-3.5 shrink-0 text-[#B45309]" aria-label="Hito" />
+                      ) : null}
+                      <span>{task.title}</span>
+                      {!task.showInCalendar ? (
+                        <CalendarClock
+                          className="h-3.5 w-3.5 shrink-0 text-[#9CA3AF]"
+                          aria-label="No se muestra en calendario"
+                        />
+                      ) : null}
                     </button>
                   </td>
                   <td className="px-3 py-3">
@@ -1463,7 +1669,7 @@ function TaskForm({ initialValues, onSubmit, onCancel, saving, teamMembers }: Ta
     setFormState(initialValues)
   }, [initialValues])
 
-  const handleChange = (field: keyof TaskFormState, value: string | number) => {
+  const handleChange = (field: keyof TaskFormState, value: string | number | boolean) => {
     setFormState((prev) => ({
       ...prev,
       [field]: value,
@@ -1569,6 +1775,53 @@ function TaskForm({ initialValues, onSubmit, onCancel, saving, teamMembers }: Ta
               </select>
             </div>
           </div>
+        </div>
+      </section>
+
+      <section className="space-y-5 rounded-[1.75rem] border border-[#E8E6E0] bg-white/95 p-6 shadow-apple-md">
+        <div className="space-y-1">
+          <p className="text-xs uppercase tracking-[0.3em] text-[#C6B89E]">Visibilidad</p>
+          <h3 className="font-heading text-lg text-[#2F4F4F]">Hito y calendario</h3>
+          <p className="text-sm text-[#6B7280]">
+            Marca si esta tarea es un hito del proyecto y decide si debe aparecer en el calendario del equipo y del cliente.
+          </p>
+        </div>
+        <div className="space-y-3">
+          <label className="flex cursor-pointer items-start gap-3 rounded-[1.25rem] border border-[#E8E6E0] bg-[#F8F7F4] p-4 transition hover:border-[#2F4F4F]/40">
+            <input
+              type="checkbox"
+              checked={formState.isMilestone}
+              onChange={(event) => handleChange("isMilestone", event.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-[#C6B89E] text-[#2F4F4F] focus:ring-[#2F4F4F]/30"
+            />
+            <div className="flex-1 space-y-1">
+              <span className="flex items-center gap-2 text-sm font-semibold text-[#2F4F4F]">
+                <Flag className="h-4 w-4 text-[#B45309]" />
+                Marcar como hito
+              </span>
+              <span className="text-xs text-[#6B7280]">
+                Los hitos se destacan visualmente y se diferencian en el calendario cuando están activos.
+              </span>
+            </div>
+          </label>
+          <label className="flex cursor-pointer items-start gap-3 rounded-[1.25rem] border border-[#E8E6E0] bg-[#F8F7F4] p-4 transition hover:border-[#2F4F4F]/40">
+            <input
+              type="checkbox"
+              checked={formState.showInCalendar}
+              onChange={(event) => handleChange("showInCalendar", event.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-[#C6B89E] text-[#2F4F4F] focus:ring-[#2F4F4F]/30"
+            />
+            <div className="flex-1 space-y-1">
+              <span className="flex items-center gap-2 text-sm font-semibold text-[#2F4F4F]">
+                <CalendarClock className="h-4 w-4 text-[#2F4F4F]" />
+                Mostrar en el calendario
+              </span>
+              <span className="text-xs text-[#6B7280]">
+                Si lo desactivas, la tarea solo será visible dentro del proyecto (no aparecerá en el calendario global ni del cliente).
+                Necesita una fecha de inicio o entrega para generar eventos.
+              </span>
+            </div>
+          </label>
         </div>
       </section>
 

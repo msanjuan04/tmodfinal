@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { useSearchParams } from "react-router-dom"
+import { differenceInCalendarDays, format, parseISO } from "date-fns"
+import { es } from "date-fns/locale"
+import { CalendarDays, Briefcase, User, Clock } from "lucide-react"
 
 import { AdminProjectPicker } from "@/components/calendar/admin-project-picker"
 import { AdminTaskCalendar } from "@/components/calendar/admin-task-calendar"
-import { Card } from "@/components/ui/card"
 import type { ProjectEvent } from "@app/types/events"
 import {
   listGlobalEvents,
@@ -11,8 +13,6 @@ import {
   listProjectCalendarSummaries,
   listProjectEvents,
 } from "@app/lib/api/events"
-import { differenceInCalendarDays, format, parseISO } from "date-fns"
-import { es } from "date-fns/locale"
 
 export function AdminCalendarPage() {
   const [searchParams] = useSearchParams()
@@ -29,12 +29,8 @@ export function AdminCalendarPage() {
 
   useEffect(() => {
     listProjectCalendarSummaries()
-      .then((items) => {
-        setProjects(items)
-      })
-      .catch((err) => {
-        console.error(err)
-      })
+      .then(setProjects)
+      .catch(console.error)
   }, [])
 
   useEffect(() => {
@@ -100,7 +96,6 @@ export function AdminCalendarPage() {
   }, [activeSlug, mode])
 
   const handleEventsChanged = useCallback(() => {
-    // Recarga silenciosa para que el usuario no pierda el scroll ni vea parpadeos
     ;(async () => {
       try {
         if (mode === "personal") {
@@ -144,11 +139,6 @@ export function AdminCalendarPage() {
     })()
   }, [activeSlug, mode])
 
-  const title = activeSlug ? activeProjectName ?? "Calendario de proyecto" : "Calendario global Terrazea"
-  const subtitle = activeSlug
-    ? "Gestiona visitas, hitos y entregas del proyecto en tiempo real."
-    : "Visión general de todos los proyectos Terrazea."
-
   const now = new Date()
   const parsedEvents = events
     .map((event) => {
@@ -168,22 +158,37 @@ export function AdminCalendarPage() {
   const nextEventStart = nextEventEntry?.start ?? null
 
   const nextEventLabel = nextEvent && nextEventStart
-    ? `${nextEvent.isAllDay ? format(nextEventStart, "EEEE d 'de' MMMM", { locale: es }) + " · Todo el día" : format(nextEventStart, "EEEE d 'de' MMMM · HH:mm", { locale: es })}${nextEvent.project ? ` · ${nextEvent.project.name}` : ""}`
-    : "Sin eventos próximos programados."
+    ? nextEvent.isAllDay
+      ? `${format(nextEventStart, "EEEE d 'de' MMMM", { locale: es })} · Todo el día`
+      : format(nextEventStart, "EEEE d 'de' MMMM · HH:mm", { locale: es })
+    : null
 
-  const projectSummary = activeSlug ? projects.find((project) => project.slug === activeSlug) : null
+  const subtitle = mode === "personal"
+    ? "Tus bloques personales y recordatorios."
+    : activeSlug
+      ? "Hitos, entregas y eventos del proyecto seleccionado."
+      : "Visión global de todos los proyectos en Terrazea."
+
+  const title = mode === "personal"
+    ? "Mi calendario"
+    : activeSlug
+      ? activeProjectName ?? "Calendario del proyecto"
+      : "Calendario Terrazea"
 
   if (loading) {
     return (
-      <div className="rounded-[1.5rem] border border-[#E8E6E0] bg-white/80 p-10 text-center shadow-apple-xl">
-        <p className="text-sm font-medium text-[#6B7280]">Cargando calendario…</p>
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <div className="flex items-center gap-2 text-sm text-[#6B7280]">
+          <CalendarDays className="h-4 w-4 animate-pulse text-[#2F4F4F]" />
+          Cargando calendario…
+        </div>
       </div>
     )
   }
 
   if (error) {
     return (
-      <div className="rounded-[1.5rem] border border-[#FCA5A5] bg-[#FEF2F2] p-10 text-center shadow-apple-md">
+      <div className="rounded-[1.75rem] border border-[#FCA5A5] bg-[#FEF2F2] p-10 text-center shadow-apple-md">
         <h2 className="font-heading text-xl font-semibold text-[#B91C1C]">No pudimos cargar el calendario</h2>
         <p className="mt-2 text-sm text-[#B91C1C]">{error}</p>
       </div>
@@ -192,73 +197,55 @@ export function AdminCalendarPage() {
 
   return (
     <div className="space-y-6 pb-16">
-      <Card className="rounded-[1.5rem] border-[#E8E6E0] bg-white px-6 py-6 shadow-sm">
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <p className="text-xs uppercase tracking-[0.3em] text-[#C6B89E]">Planning</p>
-              <h1 className="font-heading text-3xl text-[#2F4F4F] lg:text-4xl">Task calendar</h1>
+      {/* Header principal compacto y consistente con la estética de la app */}
+      <section className="rounded-[1.75rem] border border-[#E8E6E0] bg-white/95 px-6 py-6 shadow-apple-md lg:px-8">
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+          <div className="space-y-3">
+            <p className="text-xs uppercase tracking-[0.3em] text-[#C6B89E]">Planificación</p>
+            <div className="space-y-1">
+              <h1 className="font-heading text-3xl font-semibold text-[#2F4F4F] lg:text-4xl">{title}</h1>
               <p className="max-w-2xl text-sm text-[#6B7280]">{subtitle}</p>
             </div>
-            <div className="mt-2 flex max-w-md flex-col gap-3 sm:flex-row sm:items-center">
-              <div className="relative flex-1">
-                <input
-                  type="search"
-                  placeholder="Buscar tareas, visitas o hitos..."
-                  className="w-full rounded-full border border-[#E8E6E0] bg-[#F8F7F4] px-4 py-2.5 text-sm text-[#2F4F4F] placeholder:text-[#9CA3AF] focus:border-[#0D9488] focus:outline-none focus:ring-2 focus:ring-[#AAF2E3]"
+            {/* Mini resumen inline */}
+            <div className="flex flex-wrap gap-2 pt-1">
+              <InlineStat
+                icon={CalendarDays}
+                label="Próximos 7 días"
+                value={upcomingInSevenDays.length}
+              />
+              {nextEventLabel ? (
+                <InlineStat
+                  icon={Clock}
+                  label="Siguiente"
+                  value={nextEventLabel}
+                  textValue
                 />
-              </div>
+              ) : null}
             </div>
           </div>
-          <div className="flex w-full max-w-sm flex-col gap-3">
-            <div className="rounded-[1.25rem] border border-[#E8E6E0] bg-[#F8F7F4] px-4 py-3">
-              <p className="text-[10px] uppercase tracking-[0.3em] text-[#C6B89E]">Vista</p>
-              <p className="mt-1 text-xs text-[#4B5563]">
-                {mode === "personal"
-                  ? "Mostrando tus tareas personales"
-                  : activeSlug
-                    ? "Mostrando calendario del proyecto seleccionado"
-                    : "Mostrando calendario global Terrazea"}
-              </p>
-            </div>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                className={`flex-1 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
-                  mode === "projects"
-                    ? "border-[#0D9488] bg-white text-[#0D9488]"
-                    : "border-[#E8E6E0] bg-white/60 text-[#374151] hover:border-[#0D9488]/60"
-                }`}
+
+          {/* Controles: modo + selector de proyecto */}
+          <div className="flex w-full flex-col gap-3 lg:w-auto lg:min-w-[280px]">
+            <div className="inline-flex rounded-full border border-[#E8E6E0] bg-[#F8F7F4] p-1 shadow-apple-sm">
+              <ModeButton
+                active={mode === "projects"}
                 onClick={() => setMode("projects")}
-              >
-                Proyectos
-              </button>
-              <button
-                type="button"
-                className={`flex-1 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
-                  mode === "personal"
-                    ? "border-[#0D9488] bg-white text-[#0D9488]"
-                    : "border-[#E8E6E0] bg-white/60 text-[#374151] hover:border-[#0D9488]/60"
-                }`}
+                icon={Briefcase}
+                label="Proyectos"
+              />
+              <ModeButton
+                active={mode === "personal"}
                 onClick={() => setMode("personal")}
-              >
-                Mis tareas
-              </button>
+                icon={User}
+                label="Mis tareas"
+              />
             </div>
             {mode === "projects" ? (
               <AdminProjectPicker projects={projects} activeSlug={activeSlug} allowGlobalOption />
             ) : null}
-            {projectSummary ? (
-              <div className="rounded-[1.25rem] border border-[#E8E6E0] bg-[#F8F7F4] px-4 py-3 text-xs text-[#4B5563]">
-                <p className="text-[10px] uppercase tracking-[0.3em] text-[#C6B89E]">Cliente</p>
-                <p className="mt-1 font-medium text-[#2F4F4F]">
-                  {projectSummary.clientName ?? "Cliente sin asignar"}
-                </p>
-              </div>
-            ) : null}
           </div>
         </div>
-      </Card>
+      </section>
 
       <AdminTaskCalendar
         events={events}
@@ -270,6 +257,53 @@ export function AdminCalendarPage() {
         isGlobal={mode === "projects" && !activeSlug}
         onEventsChanged={handleEventsChanged}
       />
+    </div>
+  )
+}
+
+function ModeButton({
+  active,
+  onClick,
+  icon: Icon,
+  label,
+}: {
+  active: boolean
+  onClick: () => void
+  icon: typeof Briefcase
+  label: string
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex flex-1 items-center justify-center gap-2 rounded-full px-4 py-1.5 text-xs font-semibold transition ${
+        active
+          ? "bg-[#2F4F4F] text-white shadow-apple-sm"
+          : "text-[#4B5563] hover:text-[#2F4F4F]"
+      }`}
+    >
+      <Icon className="h-3.5 w-3.5" />
+      {label}
+    </button>
+  )
+}
+
+function InlineStat({
+  icon: Icon,
+  label,
+  value,
+  textValue,
+}: {
+  icon: typeof CalendarDays
+  label: string
+  value: string | number
+  textValue?: boolean
+}) {
+  return (
+    <div className="inline-flex items-center gap-2 rounded-full border border-[#E8E6E0] bg-[#F8F7F4] px-3 py-1.5 text-xs text-[#4B5563]">
+      <Icon className="h-3.5 w-3.5 text-[#C6B89E]" />
+      <span className="font-medium text-[#6B7280]">{label}:</span>
+      <span className={`font-semibold text-[#2F4F4F] ${textValue ? "capitalize" : ""}`}>{value}</span>
     </div>
   )
 }

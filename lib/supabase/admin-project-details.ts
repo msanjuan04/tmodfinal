@@ -58,6 +58,7 @@ export interface AdminProjectDetailsResult {
     locationCity: string | null
     locationNotes: string | null
     locationMapUrl: string | null
+    averageTicket: number | null
     clientName: string | null
   }
   stats: {
@@ -92,7 +93,7 @@ export interface AdminProjectDetailsResult {
 export async function getAdminProjectDetails(projectId: string): Promise<AdminProjectDetailsResult> {
   const supabase = createServerSupabaseClient()
 
-  const { data: projectRow, error: projectError } = await supabase
+  let { data: projectRow, error: projectError } = await supabase
     .from("projects")
     .select(
       `
@@ -106,16 +107,46 @@ export async function getAdminProjectDetails(projectId: string): Promise<AdminPr
         location_city,
         location_notes,
         map_url,
+        ticket_amount,
         clients ( full_name )
       `,
     )
     .eq("id", projectId)
     .maybeSingle()
 
+  // Fallback si ticket_amount no existe
+  if (projectError && (projectError as { code?: string }).code === "42703") {
+    const msg = (projectError as { message?: string }).message ?? ""
+    if (msg.toLowerCase().includes("ticket_amount")) {
+      console.warn("[admin-project-details] Columna ticket_amount no existe; consulta sin ella.")
+      const retry = await supabase
+        .from("projects")
+        .select(
+          `
+            id,
+            name,
+            code,
+            status,
+            progress_percent,
+            start_date,
+            estimated_delivery,
+            location_city,
+            location_notes,
+            map_url,
+            clients ( full_name )
+          `,
+        )
+        .eq("id", projectId)
+        .maybeSingle()
+      projectRow = retry.data as typeof projectRow
+      projectError = retry.error
+    }
+  }
+
   if (projectError) throw projectError
   if (!projectRow) throw new Error("Proyecto no encontrado")
 
-  const project = projectRow as ProjectRow
+  const project = projectRow as ProjectRow & { ticket_amount?: number | string | null }
 
   const { data: taskRows, error: tasksError } = await supabase
     .from("project_tasks")
@@ -224,6 +255,10 @@ export async function getAdminProjectDetails(projectId: string): Promise<AdminPr
       locationCity: project.location_city,
       locationNotes: project.location_notes,
       locationMapUrl: project.map_url,
+      averageTicket:
+        project.ticket_amount !== null && project.ticket_amount !== undefined
+          ? Number(project.ticket_amount)
+          : null,
       clientName: Array.isArray(project.clients)
         ? project.clients[0]?.full_name ?? null
         : project.clients?.full_name ?? null,

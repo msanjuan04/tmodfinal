@@ -2,16 +2,16 @@ import type { ReactNode } from "react"
 import { useEffect, useMemo, useState } from "react"
 
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
-import { Loader2, MapPin, CalendarDays, RefreshCcw } from "lucide-react"
+import { FolderKanban, Loader2, MapPin, CalendarDays } from "lucide-react"
 import { toast } from "sonner"
 
 import { fetchClientProjectDetails } from "@app/lib/api/client"
 import type { ProjectDetailsData } from "@/lib/supabase/queries"
 
 import { useClientRouteContext } from "./ClientLayout"
+import { ClientPageHeader } from "@/components/client/client-page-header"
 
 export function ClientProjectsPage() {
   const { projects } = useClientRouteContext()
@@ -76,7 +76,7 @@ export function ClientProjectsPage() {
 
   if (projects.length === 0) {
     return (
-      <Card className="rounded-[1.5rem] border border-[#E8E6E0] bg-white/80 p-10 text-center shadow-apple-xl">
+      <Card className="rounded-[1.75rem] border border-[#E8E6E0] bg-white/90 p-10 text-center shadow-apple-md">
         <CardContent>
           <h2 className="font-heading text-2xl font-semibold text-[#2F4F4F]">Aún no tienes proyectos activos</h2>
           <p className="mt-2 text-sm text-[#6B7280]">
@@ -89,62 +89,32 @@ export function ClientProjectsPage() {
 
   return (
     <div className="space-y-6 pb-16">
-      <Card className="rounded-[2rem] border border-[#E8E6E0] bg-white/90 px-6 py-6 shadow-apple-xl">
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <p className="text-xs uppercase tracking-[0.3em] text-[#C6B89E]">Mis proyectos</p>
-              <h1 className="font-heading text-3xl text-[#2F4F4F] lg:text-4xl">Detalles y avances</h1>
-              <p className="max-w-2xl text-sm text-[#6B7280]">
-                Consulta el estado de cada fase, la actividad reciente y la galería de fotos tal como la publica tu equipo.
-              </p>
-            </div>
-            {selectedProject ? (
-              <div className="grid gap-3 text-sm text-[#4B5563] sm:grid-cols-2">
-                <div className="rounded-[1.25rem] border border-[#E8E6E0] bg-[#F8F7F4] px-4 py-3">
-                  <p className="text-xs uppercase tracking-[0.3em] text-[#C6B89E]">Proyecto</p>
-                  <p className="mt-2 font-medium text-[#2F4F4F]">{selectedProject.name}</p>
-                  {selectedProject.code ? <p className="text-xs text-[#6B7280]">Código: {selectedProject.code}</p> : null}
-                </div>
-                <div className="rounded-[1.25rem] border border-[#E8E6E0] bg-[#F8F7F4] px-4 py-3">
-                  <p className="text-xs uppercase tracking-[0.3em] text-[#C6B89E]">Avance</p>
-                  <div className="mt-2 flex items-center gap-2 text-[#2F4F4F]">
-                    <div className="h-2 w-32 overflow-hidden rounded-full bg-[#E8E6E0]">
-                      <div
-                        className="h-2 rounded-full bg-[#2F4F4F]"
-                        style={{ width: `${Math.round(selectedProject.progressPercent)}%` }}
-                      />
-                    </div>
-                    <span className="text-sm font-semibold">{Math.round(selectedProject.progressPercent)}%</span>
-                  </div>
-                </div>
+      <ClientPageHeader
+        overline={selectedProject?.code ? `Proyecto · ${selectedProject.code}` : "Mis proyectos"}
+        title={selectedProject ? selectedProject.name : "Detalles y avances"}
+        description="Consulta el estado de cada fase, la actividad reciente y la galería de fotos tal como la publica tu equipo."
+        icon={FolderKanban}
+        variant="dark"
+        projects={projects}
+        selectedSlug={selectedSlug}
+        onSelectedSlugChange={setSelectedSlug}
+        onRefresh={() => setRefreshToken((value) => value + 1)}
+        refreshing={loading}
+      >
+        {selectedProject ? (
+          <div className="flex flex-wrap items-center gap-3 pt-2">
+            <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs text-white/90 backdrop-blur">
+              <div className="h-2 w-24 overflow-hidden rounded-full bg-white/20">
+                <div
+                  className="h-full rounded-full bg-[#C6B89E]"
+                  style={{ width: `${Math.round(selectedProject.progressPercent)}%` }}
+                />
               </div>
-            ) : null}
+              <span className="font-semibold">{Math.round(selectedProject.progressPercent)}% avance</span>
+            </div>
           </div>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <select
-              className="w-full min-w-[240px] rounded-full border border-[#E8E6E0] bg-[#F8F7F4] px-5 py-2 text-sm text-[#2F4F4F] focus:outline-none focus:ring-2 focus:ring-[#2F4F4F]/20"
-              value={selectedSlug ?? ""}
-              onChange={(event) => setSelectedSlug(event.target.value || null)}
-            >
-              {projects.map((project) => (
-                <option key={project.slug} value={project.slug}>
-                  {project.name}
-                </option>
-              ))}
-            </select>
-            <Button
-              variant="outline"
-              className="inline-flex items-center gap-2 rounded-full border-[#E8E6E0] px-5 py-2 text-[#2F4F4F] hover:bg-[#F4F1EA]"
-              onClick={() => setRefreshToken((value) => value + 1)}
-              disabled={!selectedSlug || loading}
-            >
-              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
-              {loading ? "Actualizando" : "Actualizar"}
-            </Button>
-          </div>
-        </div>
-      </Card>
+        ) : null}
+      </ClientPageHeader>
 
       {loading ? (
         <Card className="rounded-[1.25rem] border-[#E8E6E0] bg-white">

@@ -2303,6 +2303,10 @@ async function buildFallbackTaskList(projectId: string, filters: ListProjectTask
         startDate: phase.expected_start ?? null,
         dueDate: phase.expected_end ?? null,
         position: Number(phase.sort_order ?? index),
+        // Las fases legacy no son hitos y no se muestran como eventos en el
+        // calendario; si hiciera falta, el admin puede crear un hito aparte.
+        isMilestone: false,
+        showInCalendar: false,
         createdAt,
         updatedAt,
       }
