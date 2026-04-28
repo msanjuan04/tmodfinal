@@ -27,6 +27,7 @@ import {
   TrendingUp,
   Clock,
   MapPin,
+  ChevronDown,
 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
@@ -79,15 +80,18 @@ const PROJECT_STATUS_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "cancelado", label: "Cancelado" },
 ]
 
+// Badges por fase dentro de la paleta Terrazea. Usamos gradación progresiva:
+// cuanto más avanzada la fase, más intenso el teal. `cancelado` es la única
+// excepción (rojo suave) porque debe destacar como estado negativo.
 const STATUS_BADGES: Record<string, string> = {
-  inicial: "bg-[#E8E6E0] text-[#4B5563]",
-  diseno: "bg-[#EDE9FE] text-[#6D28D9]",
-  presupuesto: "bg-[#FEF3C7] text-[#B45309]",
-  planificacion: "bg-[#F1F5F9] text-[#1E293B]",
-  obra_ejecucion: "bg-[#DBEAFE] text-[#1D4ED8]",
-  cierre: "bg-[#C7F9CC] text-[#166534]",
-  archivado: "bg-[#E2E8F0] text-[#475569]",
-  cancelado: "bg-[#FEE2E2] text-[#B91C1C]",
+  inicial: "bg-[#F4F1EA] text-[#6B7280]",
+  diseno: "bg-[#E8E6E0] text-[#2F4F4F]",
+  presupuesto: "bg-[#C6B89E]/40 text-[#2F4F4F]",
+  planificacion: "bg-[#C6B89E] text-[#2F4F4F]",
+  obra_ejecucion: "bg-[#2F4F4F] text-white",
+  cierre: "bg-[#1F3535] text-[#F4F1EA]",
+  archivado: "bg-[#E8E6E0] text-[#9CA3AF]",
+  cancelado: "bg-[#F4F1EA] text-[#B91C1C]",
 }
 
 const STATUS_ICONS: Record<string, typeof FileText> = {
@@ -455,7 +459,18 @@ export function AdminProjectsPage() {
       await loadProjects()
     } catch (requestError) {
       console.error(requestError)
-      toast.error("No se pudo guardar el proyecto")
+      // Mostramos el mensaje del backend para que el admin sepa qué corregir
+      // (validaciones zod, falta de cliente, etc.) en vez de un genérico.
+      const axiosError = requestError as {
+        response?: { data?: { message?: string; errors?: Record<string, string[] | undefined> } }
+      }
+      const backendMessage = axiosError?.response?.data?.message
+      const fieldErrors = axiosError?.response?.data?.errors
+      const firstFieldError =
+        fieldErrors && typeof fieldErrors === "object"
+          ? Object.values(fieldErrors).flat().filter(Boolean)[0]
+          : undefined
+      toast.error(backendMessage ?? firstFieldError ?? "No se pudo guardar el proyecto")
     } finally {
       setFormLoading(false)
     }
@@ -1022,95 +1037,142 @@ function ProjectFormSheet({ open, onOpenChange, mode, values, setValues, loading
           </p>
         </SheetHeader>
         <ScrollArea className="h-[calc(95vh-8rem)] px-8">
-          <form className="space-y-5 py-6" onSubmit={handleSubmit}>
-            <div className="rounded-[1.5rem] border border-[#E8E6E0]/70 bg-white/80 p-5 shadow-[0_15px_60px_rgba(15,23,42,0.08)]">
-              <p className="text-xs uppercase tracking-[0.35em] text-[#C6B89E]">Código Terrazea</p>
-              <div className="mt-3 flex items-center justify-between gap-3">
-                <div>
-                  <p className="font-heading text-2xl text-[#0D9488]">{values.code || "Se generará automáticamente"}</p>
-                  <p className="text-xs text-[#6B7280]">
-                    El código se asigna automáticamente al guardar y el cliente podrá usarlo en cuanto actives el proyecto.
+          <form className="space-y-6 py-6" onSubmit={handleSubmit}>
+            {/* Caja destacada con el código Terrazea, en paleta de marca */}
+            <div className="rounded-[1.5rem] border border-[#E8E6E0] bg-[#F4F1EA] p-5 shadow-apple-sm">
+              <div className="flex items-start justify-between gap-3">
+                <div className="space-y-2">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-[#C6B89E]">
+                    Código Terrazea
+                  </p>
+                  <p className="font-heading text-2xl font-semibold text-[#2F4F4F]">
+                    {values.code || "Se generará automáticamente"}
+                  </p>
+                  <p className="text-xs leading-relaxed text-[#6B7280]">
+                    El código se asigna automáticamente al guardar y el cliente podrá usarlo en cuanto actives el
+                    proyecto.
                   </p>
                 </div>
-                <Badge className="rounded-full bg-[#ECFDF5] px-3 py-1 text-xs font-semibold text-[#0D9488]">
+                <Badge className="shrink-0 rounded-full border-transparent bg-[#2F4F4F] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-white">
                   {mode === "create" ? "Nuevo" : "Editando"}
                 </Badge>
               </div>
             </div>
+
             <div className="grid gap-4">
               <div className="space-y-2">
-                <Label className="text-sm text-[#2F4F4F]">Nombre del proyecto</Label>
-                <Input value={values.name} onChange={handleChange("name")} required className="border-[#E8E6E0]" />
+                <Label className={FORM_LABEL_CLASS}>Nombre del proyecto</Label>
+                <Input
+                  value={values.name}
+                  onChange={handleChange("name")}
+                  required
+                  className={FORM_INPUT_CLASS}
+                  placeholder="Terraza Mediterránea"
+                />
               </div>
+
               <div className="space-y-2">
-                <Label className="text-sm text-[#2F4F4F]">Slug</Label>
-                <Input value={values.slug} onChange={handleChange("slug")} className="border-[#E8E6E0]" placeholder="terraza-mediterranea" />
+                <Label className={FORM_LABEL_CLASS}>Slug</Label>
+                <Input
+                  value={values.slug}
+                  onChange={handleChange("slug")}
+                  className={FORM_INPUT_CLASS}
+                  placeholder="terraza-mediterranea"
+                />
               </div>
+
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <Label className="text-sm text-[#2F4F4F]">Estado</Label>
-                  <select
-                    className="w-full rounded-lg border border-[#E8E6E0] bg-white px-3 py-2 text-sm text-[#2F4F4F] focus:outline-none focus:ring-2 focus:ring-[#2F4F4F]/20"
-                    value={values.status}
-                    onChange={handleSelectChange("status")}
-                  >
+                  <Label className={FORM_LABEL_CLASS}>Estado</Label>
+                  <FormSelect value={values.status} onChange={handleSelectChange("status")}>
                     {PROJECT_STATUS_OPTIONS.map((option) => (
                       <option key={option.value} value={option.value}>
                         {option.label}
                       </option>
                     ))}
-                  </select>
+                  </FormSelect>
                 </div>
+
                 <div className="space-y-2">
-                  <Label className="text-sm text-[#2F4F4F]">Cliente</Label>
+                  <Label className={FORM_LABEL_CLASS}>Cliente</Label>
                   {values.createNewClient ? (
                     <div className="space-y-2">
-                      <Input value={values.newClientFullName} onChange={handleChange("newClientFullName")} placeholder="Nombre completo" className="border-[#E8E6E0]" />
-                      <Input value={values.newClientEmail} onChange={handleChange("newClientEmail")} placeholder="correo@cliente.com" className="border-[#E8E6E0]" />
+                      <Input
+                        value={values.newClientFullName}
+                        onChange={handleChange("newClientFullName")}
+                        placeholder="Nombre completo"
+                        className={FORM_INPUT_CLASS}
+                      />
+                      <Input
+                        value={values.newClientEmail}
+                        onChange={handleChange("newClientEmail")}
+                        placeholder="correo@cliente.com"
+                        className={FORM_INPUT_CLASS}
+                      />
                     </div>
                   ) : (
-                    <select
-                      className="w-full rounded-lg border border-[#E8E6E0] bg-white px-3 py-2 text-sm text-[#2F4F4F] focus:outline-none focus:ring-2 focus:ring-[#2F4F4F]/20"
-                      value={values.clientId}
-                      onChange={handleSelectChange("clientId")}
-                    >
+                    <FormSelect value={values.clientId} onChange={handleSelectChange("clientId")}>
                       <option value="">Selecciona cliente</option>
                       {clientOptions.map((option) => (
                         <option key={option.value} value={option.value}>
                           {option.label}
                         </option>
                       ))}
-                    </select>
+                    </FormSelect>
                   )}
                   <button
                     type="button"
-                    className="text-xs font-medium text-[#2F4F4F] underline"
+                    className="text-xs font-semibold text-[#2F4F4F] underline-offset-4 hover:underline"
                     onClick={() => setValues((prev) => ({ ...prev, createNewClient: !prev.createNewClient }))}
                   >
                     {values.createNewClient ? "Seleccionar existente" : "Crear nuevo cliente"}
                   </button>
                 </div>
               </div>
+
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <Label className="text-sm text-[#2F4F4F]">Fecha de inicio</Label>
-                  <Input type="date" value={values.startDate} onChange={handleChange("startDate")} className="border-[#E8E6E0]" />
+                  <Label className={FORM_LABEL_CLASS}>Fecha de inicio</Label>
+                  <Input
+                    type="date"
+                    value={values.startDate}
+                    onChange={handleChange("startDate")}
+                    className={FORM_INPUT_CLASS}
+                  />
                 </div>
                 <div className="space-y-2">
-                  <Label className="text-sm text-[#2F4F4F]">Entrega estimada</Label>
-                  <Input type="date" value={values.estimatedDelivery} onChange={handleChange("estimatedDelivery")} className="border-[#E8E6E0]" />
+                  <Label className={FORM_LABEL_CLASS}>Entrega estimada</Label>
+                  <Input
+                    type="date"
+                    value={values.estimatedDelivery}
+                    onChange={handleChange("estimatedDelivery")}
+                    className={FORM_INPUT_CLASS}
+                  />
                 </div>
               </div>
-              <div className="space-y-2">
-                <Label className="text-sm text-[#2F4F4F]">Ubicación</Label>
-                <Input value={values.locationCity} onChange={handleChange("locationCity")} className="border-[#E8E6E0]" placeholder="Ciudad" />
-                <Textarea value={values.locationNotes} onChange={handleChange("locationNotes")} className="border-[#E8E6E0]" placeholder="Notas de ubicación" />
+
+              <div className="space-y-3">
+                <Label className={FORM_LABEL_CLASS}>Ubicación</Label>
+                <Input
+                  value={values.locationCity}
+                  onChange={handleChange("locationCity")}
+                  className={FORM_INPUT_CLASS}
+                  placeholder="Ciudad"
+                />
+                <Textarea
+                  value={values.locationNotes}
+                  onChange={handleChange("locationNotes")}
+                  className="min-h-[88px] w-full rounded-[1rem] border border-[#E8E6E0] bg-[#F8F7F4] px-4 py-3 text-sm text-[#2F4F4F] placeholder:text-[#9CA3AF] focus-visible:border-[#2F4F4F] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2F4F4F]/10"
+                  placeholder="Notas de ubicación (calle, referencias, accesos…)"
+                />
                 <div className="space-y-1">
-                  <Label className="text-xs text-[#4B5563]">Coordenadas para el mapa (latitud, longitud)</Label>
+                  <Label className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[#C6B89E]">
+                    Coordenadas para el mapa (latitud, longitud)
+                  </Label>
                   <Input
                     value={values.locationMapUrl}
                     onChange={handleChange("locationMapUrl")}
-                    className="border-[#E8E6E0] font-mono text-xs"
+                    className={`${FORM_INPUT_CLASS} font-mono text-xs`}
                     placeholder="Ejemplo: 41.3902, 2.1540"
                   />
                   <p className="text-[11px] text-[#6B7280]">
@@ -1118,14 +1180,16 @@ function ProjectFormSheet({ open, onOpenChange, mode, values, setValues, loading
                   </p>
                 </div>
               </div>
-              <div className="space-y-3">
+
+              <div className="space-y-3 rounded-[1.25rem] border border-[#E8E6E0] bg-[#F8F7F4] p-4">
                 <Label className="text-sm font-semibold text-[#2F4F4F]">Asignar equipo</Label>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   {(["director", "arquitecto", "ingeniero", "instalador"] as const).map((role) => (
-                    <div key={role} className="space-y-1">
-                      <span className="text-xs uppercase tracking-[0.2em] text-[#C6B89E]">{ROLE_LABELS[role]}</span>
-                      <select
-                        className="w-full rounded-lg border border-[#E8E6E0] bg-white px-3 py-2 text-sm text-[#2F4F4F] focus:outline-none focus:ring-2 focus:ring-[#2F4F4F]/20"
+                    <div key={role} className="space-y-1.5">
+                      <span className="text-[10px] font-semibold uppercase tracking-[0.25em] text-[#C6B89E]">
+                        {ROLE_LABELS[role]}
+                      </span>
+                      <FormSelect
                         value={values.teamAssignments[role] ?? ""}
                         onChange={(event) => handleAssignmentChange(role, event.target.value)}
                       >
@@ -1135,18 +1199,19 @@ function ProjectFormSheet({ open, onOpenChange, mode, values, setValues, loading
                             {member.name}
                           </option>
                         ))}
-                      </select>
+                      </FormSelect>
                     </div>
                   ))}
                 </div>
               </div>
             </div>
-            <SheetFooter className="border-t border-white/50 pt-4">
+
+            <SheetFooter className="border-t border-[#E8E6E0] pt-4">
               <div className="flex w-full justify-end gap-2">
                 <Button
                   type="button"
                   variant="outline"
-                  className="border-[#E8E6E0] bg-white/70 text-[#2F4F4F] hover:bg-white"
+                  className="h-11 rounded-full border-[#E8E6E0] bg-white px-5 text-sm font-semibold text-[#2F4F4F] hover:bg-[#F4F1EA]"
                   onClick={() => onOpenChange(false)}
                 >
                   Cancelar
@@ -1154,9 +1219,15 @@ function ProjectFormSheet({ open, onOpenChange, mode, values, setValues, loading
                 <Button
                   type="submit"
                   disabled={loading}
-                  className="bg-[#2F4F4F] shadow-[0_15px_35px_rgba(15,23,42,0.25)] hover:bg-[#1F3535]"
+                  className="h-11 rounded-full bg-[#2F4F4F] px-6 text-sm font-semibold text-white shadow-apple hover:bg-[#1F3535] disabled:cursor-not-allowed disabled:bg-[#4B6161]"
                 >
-                  {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : mode === "create" ? "Crear proyecto" : "Guardar cambios"}
+                  {loading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : mode === "create" ? (
+                    "Crear proyecto"
+                  ) : (
+                    "Guardar cambios"
+                  )}
                 </Button>
               </div>
             </SheetFooter>
@@ -1164,5 +1235,43 @@ function ProjectFormSheet({ open, onOpenChange, mode, values, setValues, loading
         </ScrollArea>
       </SheetContent>
     </Sheet>
+  )
+}
+
+// -----------------------------------------------------------------------------
+// Estilos compartidos del formulario: inputs y selects alineados a la paleta
+// Terrazea para que toda la experiencia de crear/editar proyecto se vea
+// consistente.
+// -----------------------------------------------------------------------------
+
+const FORM_LABEL_CLASS = "text-xs font-semibold uppercase tracking-[0.18em] text-[#6B7280]"
+
+const FORM_INPUT_CLASS =
+  "h-11 w-full rounded-[1rem] border border-[#E8E6E0] bg-[#F8F7F4] px-4 text-sm text-[#2F4F4F] placeholder:text-[#9CA3AF] focus-visible:border-[#2F4F4F] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2F4F4F]/10"
+
+/**
+ * Select estilizado con chevron custom (ocultamos el del navegador con
+ * `appearance-none` y pintamos un ChevronDown absoluto).
+ */
+function FormSelect({
+  value,
+  onChange,
+  children,
+}: {
+  value: string
+  onChange: (event: React.ChangeEvent<HTMLSelectElement>) => void
+  children: React.ReactNode
+}) {
+  return (
+    <div className="relative">
+      <select
+        value={value}
+        onChange={onChange}
+        className={`${FORM_INPUT_CLASS} appearance-none pr-10`}
+      >
+        {children}
+      </select>
+      <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#6B7280]" />
+    </div>
   )
 }

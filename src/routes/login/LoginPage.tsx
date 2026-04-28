@@ -78,10 +78,11 @@ export function LoginPage() {
         <div className="absolute left-[-10%] top-[-20%] h-80 w-80 rounded-full bg-[#C6B89E]/30 blur-3xl" />
         <div className="absolute bottom-[-15%] right-[-10%] h-96 w-96 rounded-full bg-[#2F4F4F]/20 blur-3xl" />
 
-        <div className="relative w-full max-w-3xl rounded-[2.25rem] border border-[#E8E6E0] bg-white/70 p-10 shadow-apple-xl backdrop-blur-xl">
-          <div className="flex flex-col gap-10 lg:flex-row">
-            <div className="flex-1 space-y-6">
-              <div className="rounded-full bg-[#E8E6E0]/60 px-4 py-2 text-sm font-medium text-[#2F4F4F]">
+        <div className="relative grid w-full max-w-5xl gap-6 lg:grid-cols-2 lg:items-start">
+          {/* Bloque izquierdo: información, como card propio */}
+          <aside className="rounded-[2rem] border border-[#E8E6E0] bg-white/85 p-8 shadow-apple-md backdrop-blur-xl">
+            <div className="space-y-6">
+              <div className="inline-flex rounded-full bg-[#E8E6E0]/60 px-4 py-2 text-sm font-medium text-[#2F4F4F]">
                 {badgeLabel}
               </div>
               <h1 className="font-heading text-4xl font-semibold leading-tight text-[#2F4F4F]">{heading}</h1>
@@ -91,16 +92,17 @@ export function LoginPage() {
                 <p className="mt-2">{helperBox.content}</p>
               </div>
             </div>
+          </aside>
 
-            <div className="flex-1 rounded-[1.75rem] border border-[#E8E6E0] bg-white p-8 shadow-apple-md">
-              <LoginForm
-                redirectTo={redirectTo}
-                reason={reason}
-                mode={target}
-                initialLoginMode={initialLoginMode}
-              />
-            </div>
-          </div>
+          {/* Bloque derecho: login, card independiente */}
+          <section className="rounded-[2rem] border border-[#E8E6E0] bg-white p-8 shadow-apple-xl">
+            <LoginForm
+              redirectTo={redirectTo}
+              reason={reason}
+              mode={target}
+              initialLoginMode={initialLoginMode}
+            />
+          </section>
         </div>
       </main>
     </div>

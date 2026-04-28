@@ -51,6 +51,13 @@ export async function runActivationRemindersJob(): Promise<void> {
       .slice()
       .sort((a: any, b: any) => new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime())[0]
 
+    // Si el cliente no tiene ningún proyecto con código, el recordatorio no
+    // puede incluir el código Terrazea → el correo queda cojo. Mejor saltarlo.
+    if (!latestProject?.code) {
+      console.log(`[scheduler:activation] skip ${client.email}: cliente sin proyecto con código`)
+      continue
+    }
+
     try {
       await sendActivationReminderEmail({
         to: client.email,

@@ -200,18 +200,34 @@ export async function getAdminClientDetail(clientId: string): Promise<AdminClien
   ])
 
   if (clientResult.error) throw clientResult.error
-  if (!clientResult.data) throw new Error("Cliente no encontrado")
+  if (!clientResult.data) {
+    const notFound = new Error("Cliente no encontrado")
+    ;(notFound as Error & { status?: number }).status = 404
+    throw notFound
+  }
 
+  // Core: el cliente y sus proyectos sí son obligatorios. Si falla uno, la
+  // ficha no tiene sentido y lanzamos.
   if (projectsResult.error) throw projectsResult.error
-  if (notesResult.error) throw notesResult.error
-  if (activityResult.error) throw activityResult.error
-  if (documentsResult.error) throw documentsResult.error
+
+  // Secciones accesorias (notas, actividad, documentos) son defensivas: si la
+  // tabla no existe o la query falla, seguimos con array vacío en vez de
+  // romper toda la ficha. Facilita el rollout incremental del schema.
+  if (notesResult.error) {
+    console.warn("[admin-clients] client_notes no disponible:", notesResult.error.message)
+  }
+  if (activityResult.error) {
+    console.warn("[admin-clients] client_activity no disponible:", activityResult.error.message)
+  }
+  if (documentsResult.error) {
+    console.warn("[admin-clients] client_documents no disponible:", documentsResult.error.message)
+  }
 
   const clientRow = clientResult.data as any
   const projectRows = (projectsResult.data ?? []) as Array<any>
-  const noteRows = (notesResult.data ?? []) as Array<any>
-  const activityRows = (activityResult.data ?? []) as Array<any>
-  const documentRows = (documentsResult.data ?? []) as Array<any>
+  const noteRows = (notesResult.error ? [] : notesResult.data ?? []) as Array<any>
+  const activityRows = (activityResult.error ? [] : activityResult.data ?? []) as Array<any>
+  const documentRows = (documentsResult.error ? [] : documentsResult.data ?? []) as Array<any>
 
   const projects = projectRows.map((row) => ({
     id: row.id,
@@ -287,16 +303,20 @@ export async function getAdminClientDetail(clientId: string): Promise<AdminClien
       .order("sent_at", { ascending: false })
       .limit(40)
 
-    if (messagesError) throw messagesError
-
-    messages = (messageRows ?? []).map((row: any) => ({
-      id: row.id,
-      content: row.content,
-      sentAt: row.sent_at,
-      senderType: row.sender_type,
-      projectId: row.project_conversations?.project_id ?? null,
-      projectName: row.project_conversations?.projects?.name ?? null,
-    }))
+    if (messagesError) {
+      // Defensivo: si la query de mensajes falla, seguimos con [] en vez de
+      // tumbar toda la ficha del cliente.
+      console.warn("[admin-clients] project_messages no disponible:", messagesError.message)
+    } else {
+      messages = (messageRows ?? []).map((row: any) => ({
+        id: row.id,
+        content: row.content,
+        sentAt: row.sent_at,
+        senderType: row.sender_type,
+        projectId: row.project_conversations?.project_id ?? null,
+        projectName: row.project_conversations?.projects?.name ?? null,
+      }))
+    }
   }
 
   const stats: AdminClientStats = {

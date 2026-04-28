@@ -19,6 +19,11 @@ export interface AdminDashboardSummary {
     total: number
     newThisMonth: number
   }
+  // Ticket medio: promedio del importe (projects.ticket_amount) de los
+  // proyectos que tienen valor registrado. Null si la columna aún no existe
+  // en esta instalación o ningún proyecto tiene importe.
+  averageTicket: number | null
+  ticketCount: number
   billing: {
     total: number | null
     pending: number | null
@@ -88,6 +93,7 @@ interface ProjectRecord {
   client_id: string
   location_city?: string | null
   map_url?: string | null
+  ticket_amount?: number | string | null
   project_team_members: Array<{
     team_member_id: string
     is_primary: boolean
@@ -98,18 +104,43 @@ interface ProjectRecord {
 export async function getAdminDashboardData(filters: AdminDashboardFilters): Promise<AdminDashboardData> {
   const supabase = createServerSupabaseClient()
 
-  const { data: projectRows, error: projectError } = await supabase
-    .from("projects")
-    .select(
-      "id, name, status, progress_percent, estimated_delivery, created_at, client_id, location_city, map_url, project_team_members(team_member_id, is_primary, team_members(full_name))",
-    )
-    .order("created_at", { ascending: false })
+  // Intentamos traer `ticket_amount` para el KPI de ticket medio; si la
+  // columna aún no existe (instalaciones antiguas), volvemos a preguntar sin
+  // ella y marcamos ticket como no disponible.
+  let projectRows:
+    | Array<Record<string, unknown>>
+    | null = null
+  let projectsHaveTicket = true
+  {
+    const { data, error } = await supabase
+      .from("projects")
+      .select(
+        "id, name, status, progress_percent, estimated_delivery, created_at, client_id, location_city, map_url, ticket_amount, project_team_members(team_member_id, is_primary, team_members(full_name))",
+      )
+      .order("created_at", { ascending: false })
 
-  if (projectError) {
-    throw projectError
+    if (error) {
+      const msg = `${error.message ?? ""} ${(error as { details?: string }).details ?? ""}`.toLowerCase()
+      if (msg.includes("ticket_amount")) {
+        console.warn("[admin-dashboard] Columna ticket_amount no existe; KPI de ticket medio deshabilitado.")
+        projectsHaveTicket = false
+        const retry = await supabase
+          .from("projects")
+          .select(
+            "id, name, status, progress_percent, estimated_delivery, created_at, client_id, location_city, map_url, project_team_members(team_member_id, is_primary, team_members(full_name))",
+          )
+          .order("created_at", { ascending: false })
+        if (retry.error) throw retry.error
+        projectRows = retry.data ?? []
+      } else {
+        throw error
+      }
+    } else {
+      projectRows = data ?? []
+    }
   }
 
-  const projects = ((projectRows ?? []) as unknown) as ProjectRecord[]
+  const projects = (projectRows as unknown) as ProjectRecord[]
 
   const managerMap = new Map<string, string>()
   projects.forEach((project) => {
@@ -143,6 +174,25 @@ export async function getAdminDashboardData(filters: AdminDashboardFilters): Pro
   const averageProgress =
     filteredProjects.reduce((acc, project) => acc + Number(project.progress_percent ?? 0), 0) /
     (filteredProjects.length > 0 ? filteredProjects.length : 1)
+
+  // Ticket medio: promedio de los proyectos que tienen un importe positivo.
+  let averageTicket: number | null = null
+  let ticketCount = 0
+  if (projectsHaveTicket) {
+    const ticketValues = filteredProjects
+      .map((project) => {
+        const raw = project.ticket_amount
+        if (raw === null || raw === undefined || raw === "") return null
+        const parsed = Number(raw)
+        return Number.isFinite(parsed) && parsed > 0 ? parsed : null
+      })
+      .filter((value): value is number => value !== null)
+    ticketCount = ticketValues.length
+    if (ticketCount > 0) {
+      const sum = ticketValues.reduce((acc, value) => acc + value, 0)
+      averageTicket = sum / ticketCount
+    }
+  }
 
   const { data: clientsRows, error: clientsError } = await supabase
     .from("clients")
@@ -236,6 +286,8 @@ export async function getAdminDashboardData(filters: AdminDashboardFilters): Pro
         total: totalClients,
         newThisMonth,
       },
+      averageTicket: averageTicket !== null ? Number(averageTicket.toFixed(2)) : null,
+      ticketCount,
       billing: {
         total: null,
         pending: null,

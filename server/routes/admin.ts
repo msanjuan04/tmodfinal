@@ -1,10 +1,12 @@
 import { Buffer } from "node:buffer"
+import { randomBytes } from "node:crypto"
 import { Router } from "express"
 import { z } from "zod"
+import bcrypt from "bcryptjs"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 import { getAdminClientsOverview } from "../../lib/supabase/admin-data"
-import { createClientDocumentRecord } from "../../lib/supabase/admin-clients"
+import { createClientDocumentRecord, getAdminClientDetail } from "../../lib/supabase/admin-clients"
 import { getAdminDashboardData } from "../../lib/supabase/admin-dashboard"
 import {
   createProjectEvent,
@@ -38,7 +40,11 @@ import { getDocuments, getMessages, ensureProjectConversation, sendTeamMemberCon
 import type { ListProjectTasksFilters, ListProjectTasksResult, ProjectTask } from "../../lib/supabase/project-tasks"
 import type { ProjectTaskStatus } from "../../types/project-tasks"
 import { addDays, isToday, isWithinInterval, startOfDay } from "date-fns"
-import { createAdminTeamMember, listAdminTeamMembers } from "../../lib/supabase/admin-team"
+import {
+  createAdminTeamMember,
+  listAdminTeamMembers,
+  setTeamMemberProjects,
+} from "../../lib/supabase/admin-team"
 import {
   PROJECT_TEAM_ROLES,
   assignProjectTeamRoles,
@@ -79,7 +85,12 @@ import {
 } from "../../lib/supabase/admin-payments"
 import { ensureStripeCustomer, createCheckoutSessionForPayment } from "../../lib/payments/stripe"
 import { env } from "../config/env"
-import { sendClientWelcomeEmail, sendDocumentSharedEmail, sendPaymentRequestEmail } from "../services/email"
+import {
+  sendClientWelcomeEmail,
+  sendDocumentSharedEmail,
+  sendNewProjectAssignedEmail,
+  sendPaymentRequestEmail,
+} from "../services/email"
 import { createProjectNotification, listAdminNotifications, markAdminNotificationRead } from "../../lib/supabase/notifications"
 import {
   createBudgetProduct,
@@ -124,50 +135,52 @@ const createTeamMemberSchema = z.object({
     .transform((value) => (value && value.trim().length > 0 ? value.trim() : undefined)),
 })
 
+// `nullish()` acepta tanto `undefined` como `null` — el formulario del
+// frontend manda `null` para los campos vacíos (fechas sin completar,
+// ubicación sin rellenar) y zod reventaba con 400 al rechazarlos.
 const createProjectSchema = z.object({
   name: z.string().min(1).max(160),
   slug: z
     .string()
     .max(120)
-    .optional()
+    .nullish()
     .transform((value) => (value && value.trim().length > 0 ? value.trim() : undefined)),
   code: z
     .string()
     .max(120)
-    .optional()
+    .nullish()
     .transform((value) => (value && value.trim().length > 0 ? value.trim() : undefined)),
   status: z
     .string()
     .max(80)
-    .optional()
+    .nullish()
     .transform((value) => (value && value.trim().length > 0 ? value.trim() : "inicial")),
   startDate: z
     .string()
-    .optional()
+    .nullish()
     .transform((value) => (value && value.length > 0 ? value : undefined)),
   estimatedDelivery: z
     .string()
-    .optional()
+    .nullish()
     .transform((value) => (value && value.length > 0 ? value : undefined)),
   locationCity: z
     .string()
-    .optional()
+    .nullish()
     .transform((value) => (value && value.length > 0 ? value : undefined)),
   locationNotes: z
     .string()
-    .optional()
+    .nullish()
     .transform((value) => (value && value.length > 0 ? value : undefined)),
   locationMapUrl: z
     .string()
-    .optional()
-    .or(z.literal(""))
+    .nullish()
     .transform((value) => (value && value.trim().length > 0 ? value.trim() : undefined)),
-  clientId: z.string().uuid().optional(),
-  createNewClient: z.boolean().optional(),
-  newClientFullName: z.string().optional(),
-  newClientEmail: z.string().optional(),
-  managerId: z.string().uuid().optional(),
-  teamAssignments: z.record(z.string(), z.string().uuid().nullable()).optional(),
+  clientId: z.string().uuid().nullish(),
+  createNewClient: z.boolean().nullish(),
+  newClientFullName: z.string().nullish(),
+  newClientEmail: z.string().nullish(),
+  managerId: z.string().uuid().nullish(),
+  teamAssignments: z.record(z.string(), z.string().uuid().nullable()).nullish(),
 })
 
 const updateProjectSchema = createProjectSchema.partial()
@@ -340,12 +353,17 @@ async function ensureClientAppUser(
     }
 
     if (!existingUser) {
-      // Creamos la cuenta sin contraseña. El cliente la definirá él mismo tras
-      // entrar con el código Terrazea. Así los admins nunca conocen la clave.
+      // Creamos la cuenta con un hash dummy aleatorio e inservible: nunca se
+      // envía ni se comparte con nadie. El cliente lo sobrescribirá cuando
+      // defina su contraseña real vía /client/setup-password tras entrar con
+      // el código Terrazea. Esto permite dejar la columna NOT NULL intacta
+      // hasta que se aplique la migración que la relaja a nullable.
+      const dummyPassword = randomBytes(24).toString("base64url")
+      const dummyHash = await bcrypt.hash(dummyPassword, 10)
       const { error: insertError } = await supabase.from("app_users").insert({
         email,
         full_name: fullName,
-        password_hash: null,
+        password_hash: dummyHash,
         role: "client",
         must_update_password: true,
         is_active: true,
@@ -1022,6 +1040,33 @@ router.get(
 )
 
 router.get(
+  "/clients/:clientId",
+  asyncHandler(async (request, response) => {
+    requireAdminSession(request)
+    const { clientId } = request.params
+    if (!clientId) {
+      response.status(400).json({ message: "Cliente no especificado" })
+      return
+    }
+    try {
+      const details = await getAdminClientDetail(clientId)
+      response.json(details)
+    } catch (error) {
+      const status =
+        typeof error === "object" && error !== null && "status" in error
+          ? ((error as { status?: number }).status ?? 500)
+          : 500
+      if (status === 404) {
+        response.status(404).json({ message: "Cliente no encontrado" })
+        return
+      }
+      console.error("[admin] Error obteniendo ficha de cliente", error)
+      response.status(500).json({ message: "No pudimos cargar el cliente." })
+    }
+  }),
+)
+
+router.get(
   "/team-members",
   asyncHandler(async (request, response) => {
     requireAdminSession(request)
@@ -1084,6 +1129,49 @@ router.post(
         return
       }
       throw error
+    }
+  }),
+)
+
+// Reemplaza el set completo de proyectos asignados a un miembro del equipo.
+// Body: { assignments: [{ projectId, role, isPrimary? }, ...] }
+router.put(
+  "/team-members/:memberId/projects",
+  asyncHandler(async (request, response) => {
+    requireAdminSession(request)
+    const { memberId } = request.params
+    const { assignments } = (request.body ?? {}) as {
+      assignments?: Array<{ projectId?: unknown; role?: unknown; isPrimary?: unknown }>
+    }
+
+    if (!memberId) {
+      response.status(400).json({ message: "Miembro no especificado" })
+      return
+    }
+    if (!Array.isArray(assignments)) {
+      response.status(400).json({ message: "assignments debe ser un array" })
+      return
+    }
+
+    // Validación ligera: solo pasamos entradas con projectId y role válidos.
+    const sanitized = assignments
+      .filter((entry) => entry && typeof entry.projectId === "string" && typeof entry.role === "string")
+      .map((entry) => ({
+        projectId: (entry.projectId as string).trim(),
+        role: (entry.role as string).trim(),
+        isPrimary: entry.isPrimary === true,
+      }))
+      .filter((entry) => entry.projectId.length > 0 && entry.role.length > 0)
+
+    try {
+      await setTeamMemberProjects(memberId, sanitized)
+      response.json({ success: true, assigned: sanitized.length })
+    } catch (error) {
+      console.error("[admin-team] Error asignando proyectos", error)
+      response.status(500).json({
+        message:
+          error instanceof Error ? error.message : "No se pudieron guardar las asignaciones",
+      })
     }
   }),
 )
@@ -1435,17 +1523,37 @@ router.post(
 
         if (insertClientError || !insertedClient) {
           const isUnique = insertClientError?.code === "23505"
-          response.status(isUnique ? 409 : 500).json({
-            message: isUnique
-              ? "El correo indicado ya está asociado a un cliente existente."
-              : "No se pudo crear el cliente asociado.",
-          })
-          return
-        }
+          if (isUnique) {
+            // Ya existe un cliente con ese correo: reutilizamos su id en vez
+            // de bloquear la creación del proyecto. Así "crear proyecto con
+            // cliente nuevo" se comporta como upsert.
+            const { data: existingClient, error: existingError } = await supabase
+              .from("clients")
+              .select("id")
+              .eq("email", clientEmail)
+              .maybeSingle()
 
-        createdNewClient = true
-        clientId = insertedClient.id
-        newClientContact = { name: clientName, email: clientEmail }
+            if (existingError || !existingClient) {
+              response.status(500).json({
+                message: "El cliente ya existe pero no pudimos reutilizarlo.",
+              })
+              return
+            }
+
+            createdNewClient = false
+            clientId = existingClient.id
+            newClientContact = { name: clientName, email: clientEmail }
+          } else {
+            response.status(500).json({
+              message: "No se pudo crear el cliente asociado.",
+            })
+            return
+          }
+        } else {
+          createdNewClient = true
+          clientId = insertedClient.id
+          newClientContact = { name: clientName, email: clientEmail }
+        }
       }
 
       if (!clientId) {
@@ -1486,38 +1594,92 @@ router.post(
       })
 
       const ensured = await ensureClientAppUser(supabase, clientId, { projectCode: project.code })
-      const shouldInviteClient = Boolean(ensured && (ensured.shouldInvite || createdNewClient))
-      const shouldForceClientInvite = Boolean(ensured?.shouldInvite || createdNewClient)
-      if (shouldInviteClient && ensured) {
+      console.log("[project-create] ensureClientAppUser:", {
+        success: Boolean(ensured),
+        shouldInvite: ensured?.shouldInvite ?? null,
+        createdNewClient,
+        clientEmail: ensured?.clientEmail ?? newClientContact?.email ?? null,
+      })
+
+      const recipient = ensured
+        ? { email: ensured.clientEmail, name: ensured.clientName }
+        : createdNewClient && newClientContact
+          ? { email: newClientContact.email, name: newClientContact.name }
+          : null
+
+      // Dos casos:
+      //   · Cliente nuevo o aún no activado → welcome con código para activar.
+      //   · Cliente ya activado → aviso "nuevo proyecto disponible" (sin
+      //     pedirle activación, solo el enlace para abrirlo).
+      const needsActivation = Boolean(ensured?.shouldInvite || createdNewClient)
+
+      if (recipient && needsActivation) {
         const portalUrl = `${clientPortalBaseUrl()}/login?mode=code`
         try {
-          // Un único correo: bienvenida + código + nombre del proyecto. Así el
-          // cliente no recibe dos mensajes casi simultáneos.
+          console.log("[project-create] enviando welcome a", recipient.email)
           await sendClientWelcomeEmail({
-            to: ensured.clientEmail,
-            name: ensured.clientName,
-            projectCode: ensured.projectCode,
+            to: recipient.email,
+            name: recipient.name,
+            projectCode: project.code ?? null,
             projectName: project.name,
-            forceSend: shouldForceClientInvite,
+            forceSend: true,
           })
+          console.log("[project-create] welcome enviado OK")
         } catch (emailError) {
           console.error("[email] No se pudo enviar invitación del proyecto", emailError)
         }
 
-        try {
-          await createProjectNotification({
-            audience: "client",
-            clientId: ensured.clientId,
-            projectId: project.id,
-            type: "client_invited",
-            title: "Acceso disponible a tu proyecto",
-            description: `Activa tu cuenta para seguir ${project.name}.`,
-            linkUrl: portalUrl,
-            metadata: { projectId: project.id, projectCode: project.code },
-          })
-        } catch (notificationError) {
-          console.error("[notifications] No se pudo registrar la invitación del proyecto", notificationError)
+        if (ensured) {
+          try {
+            await createProjectNotification({
+              audience: "client",
+              clientId: ensured.clientId,
+              projectId: project.id,
+              type: "client_invited",
+              title: "Acceso disponible a tu proyecto",
+              description: `Activa tu cuenta para seguir ${project.name}.`,
+              linkUrl: portalUrl,
+              metadata: { projectId: project.id, projectCode: project.code },
+            })
+          } catch (notificationError) {
+            console.error("[notifications] No se pudo registrar la invitación del proyecto", notificationError)
+          }
         }
+      } else if (recipient) {
+        // Cliente ya activado → solo aviso del proyecto nuevo.
+        try {
+          console.log("[project-create] enviando aviso de nuevo proyecto a", recipient.email)
+          await sendNewProjectAssignedEmail({
+            to: recipient.email,
+            name: recipient.name,
+            projectName: project.name,
+            projectCode: project.code ?? null,
+            projectSlug: project.slug,
+            forceSend: true,
+          })
+          console.log("[project-create] aviso de nuevo proyecto enviado OK")
+        } catch (emailError) {
+          console.error("[email] No se pudo enviar aviso de nuevo proyecto", emailError)
+        }
+
+        if (ensured) {
+          try {
+            await createProjectNotification({
+              audience: "client",
+              clientId: ensured.clientId,
+              projectId: project.id,
+              type: "new_project_assigned",
+              title: `Nuevo proyecto: ${project.name}`,
+              description: "Ya puedes seguir su avance desde tu portal.",
+              linkUrl: `${clientPortalBaseUrl()}/client/projects?project=${encodeURIComponent(project.slug)}`,
+              metadata: { projectId: project.id, projectCode: project.code },
+            })
+          } catch (notificationError) {
+            console.error("[notifications] No se pudo registrar el nuevo proyecto", notificationError)
+          }
+        }
+      } else {
+        console.log("[project-create] skip email: sin destinatario")
       }
 
       response.status(201).json({ message: "Proyecto creado", project })

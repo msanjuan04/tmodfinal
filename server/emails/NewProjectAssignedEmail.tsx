@@ -2,68 +2,60 @@ import { Button, Hr, Section, Text } from "@react-email/components"
 
 import { TerrazeaEmailLayout } from "./components/TerrazeaEmailLayout"
 
-export interface ActivationReminderEmailProps {
+export interface NewProjectAssignedEmailProps {
   name: string
-  portalUrl: string
+  projectName: string
   projectCode?: string | null
-  projectName?: string | null
+  projectUrl: string
   supportEmail?: string
 }
 
-export function ActivationReminderEmail({
+/**
+ * Correo que recibe un cliente YA activado cuando le asignamos un nuevo
+ * proyecto. A diferencia de ClientInviteEmail, no le pedimos que active nada
+ * (ya tiene contraseña) — solo le avisamos del proyecto nuevo y le damos el
+ * enlace directo.
+ */
+export function NewProjectAssignedEmail({
   name,
-  portalUrl,
-  projectCode,
   projectName,
+  projectCode,
+  projectUrl,
   supportEmail = "hola@terrazea.com",
-}: ActivationReminderEmailProps) {
+}: NewProjectAssignedEmailProps) {
   const greeting = name ? `Hola ${name},` : "Hola,"
-  const projectLine = projectName
-    ? `Tu proyecto ${projectName} te está esperando en el portal.`
-    : "Tu proyecto te está esperando en el portal."
+  const preview = `Tienes un nuevo proyecto en Terrazea: ${projectName}`
 
   return (
-    <TerrazeaEmailLayout
-      preview="Aún no has activado tu acceso a Terrazea."
-      title="Aún no has activado tu cuenta"
-    >
+    <TerrazeaEmailLayout preview={preview} title="Nuevo proyecto disponible">
       <Text style={paragraphStyle}>{greeting}</Text>
       <Text style={paragraphStyle}>
-        Hace un par de días te enviamos las instrucciones para entrar al Portal Terrazea y vemos que aún no has
-        terminado de activar tu cuenta. {projectLine}
+        Hemos añadido un proyecto nuevo a tu cuenta Terrazea:{" "}
+        <strong>{projectName}</strong>. Ya puedes seguir su avance, consultar documentos y comunicarte con el equipo
+        desde tu portal.
       </Text>
 
       {projectCode ? (
         <Section style={codeBox}>
-          <Text style={codeLabel}>Tu código Terrazea</Text>
+          <Text style={codeLabel}>Código del proyecto</Text>
           <Text style={codeValue}>{projectCode}</Text>
-          <Text style={codeHelp}>Válido una sola vez: al introducirlo crearás tu contraseña.</Text>
+          <Text style={codeHelp}>Lo usarás como referencia en cualquier comunicación con Terrazea.</Text>
         </Section>
-      ) : (
-        <Section style={codeBox}>
-          <Text style={codeLabel}>Tu código Terrazea</Text>
-          <Text style={codeHelp}>
-            Revisa el correo de bienvenida original, ahí lo tienes. Si no lo encuentras, escríbenos a{" "}
-            <a href={`mailto:${supportEmail}`}>{supportEmail}</a> y te lo reenviamos.
-          </Text>
-        </Section>
-      )}
+      ) : null}
 
       <Section style={{ textAlign: "center", margin: "24px 0" }}>
-        <Button style={buttonStyle} href={portalUrl}>
-          Activar mi acceso ahora
+        <Button style={buttonStyle} href={projectUrl}>
+          Abrir el proyecto
         </Button>
       </Section>
 
       <Text style={paragraphStyle}>
-        Pasos rápidos: abrir el portal → elegir «Código de proyecto» → introducir el código de arriba → crear tu
-        contraseña. En menos de un minuto estás dentro.
+        Recuerda: entras con tu correo y la contraseña que ya tienes. Si olvidaste la contraseña, usa el enlace «¿Olvidaste tu contraseña?» de la pantalla de acceso.
       </Text>
 
       <Hr style={{ borderColor: "#F3EFE5", margin: "32px 0 16px" }} />
       <Text style={smallText}>
-        ¿Algún problema con el código o el correo? Respóndenos o escríbenos a{" "}
-        <a href={`mailto:${supportEmail}`}>{supportEmail}</a>.
+        ¿Alguna duda? Escríbenos a <a href={`mailto:${supportEmail}`}>{supportEmail}</a>.
       </Text>
     </TerrazeaEmailLayout>
   )
@@ -95,7 +87,7 @@ const codeLabel: React.CSSProperties = {
 }
 
 const codeValue: React.CSSProperties = {
-  fontSize: "26px",
+  fontSize: "24px",
   letterSpacing: "0.2em",
   color: "#2F4F4F",
   fontWeight: 700,

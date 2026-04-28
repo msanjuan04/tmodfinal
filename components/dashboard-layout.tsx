@@ -2,7 +2,7 @@
 
 import type React from "react"
 import { useMemo, useState } from "react"
-import { Link, NavLink, useLocation } from "react-router-dom"
+import { NavLink, useLocation, useNavigate } from "react-router-dom"
 import { useAuth } from "@app/context/AuthContext"
 import { cn } from "@/lib/utils"
 import { isSuperAdminEmail, SUPER_ADMIN_PRIMARY_EMAIL } from "@/lib/constants/admin"
@@ -98,6 +98,7 @@ function getInitials(name?: string | null, email?: string | null): string {
 
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const location = useLocation()
+  const navigate = useNavigate()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const { session, logout } = useAuth()
   const isAdmin = session?.role === "admin" || (session?.email ? isSuperAdminEmail(session.email) : false)
@@ -177,17 +178,13 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
         <DropdownMenuContent align="end" side="top" className="w-56">
           <DropdownMenuLabel>Mi Cuenta</DropdownMenuLabel>
           <DropdownMenuSeparator />
-          <DropdownMenuItem asChild>
-            <Link to="/dashboard/settings" className="flex items-center">
-              <Settings className="mr-2 h-4 w-4" />
-              Configuración
-            </Link>
+          <DropdownMenuItem onSelect={() => navigate("/dashboard/settings")}>
+            <Settings className="mr-2 h-4 w-4" />
+            Configuración
           </DropdownMenuItem>
-          <DropdownMenuItem asChild>
-            <Link to="/dashboard/notifications" className="flex items-center">
-              <Bell className="mr-2 h-4 w-4" />
-              Notificaciones
-            </Link>
+          <DropdownMenuItem onSelect={() => navigate("/dashboard/notifications")}>
+            <Bell className="mr-2 h-4 w-4" />
+            Notificaciones
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem
@@ -261,17 +258,13 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
             <DropdownMenuContent align="end" className="w-56">
               <DropdownMenuLabel>Mi Cuenta</DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuItem asChild>
-                <Link to="/dashboard/settings" className="flex items-center">
-                  <Settings className="mr-2 h-4 w-4" />
-                  Configuración
-                </Link>
+              <DropdownMenuItem onSelect={() => navigate("/dashboard/settings")}>
+                <Settings className="mr-2 h-4 w-4" />
+                Configuración
               </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link to="/dashboard/notifications" className="flex items-center">
-                  <Bell className="mr-2 h-4 w-4" />
-                  Notificaciones
-                </Link>
+              <DropdownMenuItem onSelect={() => navigate("/dashboard/notifications")}>
+                <Bell className="mr-2 h-4 w-4" />
+                Notificaciones
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem

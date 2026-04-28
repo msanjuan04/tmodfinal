@@ -181,6 +181,11 @@ export interface AdminDashboardSummary {
     total: number
     newThisMonth: number
   }
+  // Ticket medio: promedio del importe (`projects.ticket_amount`) de los
+  // proyectos que tienen valor registrado. `null` si ninguno tiene importe
+  // o si la columna aún no existe en esta instalación.
+  averageTicket: number | null
+  ticketCount: number
   billing: {
     total: number | null
     pending: number | null

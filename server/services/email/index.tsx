@@ -16,6 +16,7 @@ import {
   EventReminderEmail,
   MessageNotificationEmail,
   MilestoneCompletedEmail,
+  NewProjectAssignedEmail,
   PasswordResetEmail,
   PaymentReceiptEmail,
   PaymentReminderEmail,
@@ -172,6 +173,39 @@ export async function sendClientWelcomeEmail(params: {
         portalUrl={portalUrl}
         projectCode={params.projectCode}
         projectName={params.projectName}
+        supportEmail={env.resend.fromEmail}
+      />
+    ),
+    forceSend: params.forceSend ?? false,
+  })
+}
+
+/**
+ * Correo para avisar a un cliente YA activado de que tiene un nuevo proyecto.
+ * No es un welcome (no le pide activar cuenta), solo le notifica y le da el
+ * enlace directo para abrirlo.
+ */
+export async function sendNewProjectAssignedEmail(params: {
+  to: string
+  name: string
+  projectName: string
+  projectCode?: string | null
+  projectSlug?: string | null
+  forceSend?: boolean
+}) {
+  const base = env.clientAppUrl.replace(/\/$/, "")
+  const projectUrl = params.projectSlug
+    ? `${base}/client/projects?project=${encodeURIComponent(params.projectSlug)}`
+    : `${base}/client/projects`
+  await sendEmail({
+    to: params.to,
+    subject: `Nuevo proyecto en Terrazea: ${params.projectName}`,
+    react: (
+      <NewProjectAssignedEmail
+        name={params.name}
+        projectName={params.projectName}
+        projectCode={params.projectCode ?? null}
+        projectUrl={projectUrl}
         supportEmail={env.resend.fromEmail}
       />
     ),

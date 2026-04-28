@@ -12,7 +12,7 @@ import type {
   AdminDashboardProjectProgress,
   AdminDashboardProjectLocation,
 } from "@app/types/admin"
-import { Loader2, RefreshCw, Search, Users, FolderKanban, CalendarDays, AlertTriangle } from "lucide-react"
+import { Loader2, RefreshCw, Search, Users, FolderKanban, CalendarDays, AlertTriangle, Wallet } from "lucide-react"
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet"
 import L from "leaflet"
 import "leaflet/dist/leaflet.css"
@@ -29,7 +29,9 @@ const STATUS_LABELS: Record<string, string> = {
   cancelado: "Cancelado",
 }
 
-const BAR_COLORS = ["#2F4F4F", "#C6B89E", "#0D9488", "#B45309", "#DB2777", "#4B5563"]
+// Un único color teal claro (el mismo para todas las barras) para mantener
+// limpio el gráfico y dentro de la paleta Terrazea.
+const BAR_COLORS = ["#4A6B6B"]
 
 // Configuración del icono por defecto de Leaflet para que funcione bien con Vite
 const DefaultIcon = L.icon({
@@ -47,6 +49,8 @@ const EMPTY_DASHBOARD: AdminDashboardData = {
     projects: { total: 0, active: 0, completed: 0, pending: 0 },
     averageProgress: 0,
     clients: { total: 0, newThisMonth: 0 },
+    averageTicket: null,
+    ticketCount: 0,
     billing: { total: 0, pending: 0, hasData: false },
   },
   upcomingMilestones: [],
@@ -77,6 +81,8 @@ function normalizeAdminDashboard(raw: AdminDashboardData | null): AdminDashboard
         total: raw.summary?.clients?.total ?? 0,
         newThisMonth: raw.summary?.clients?.newThisMonth ?? 0,
       },
+      averageTicket: raw.summary?.averageTicket ?? null,
+      ticketCount: raw.summary?.ticketCount ?? 0,
       billing: {
         total: raw.summary?.billing?.total ?? 0,
         pending: raw.summary?.billing?.pending ?? 0,
@@ -213,7 +219,7 @@ export function AdminOverviewPage() {
       {shouldShowData ? (
         <div className="space-y-8">
           {/* Tarjeta principal tipo hero con KPIs */}
-          <section className="grid gap-4 lg:grid-cols-[2.2fr,1.3fr]">
+          <section className="grid gap-4">
             <Card className="overflow-hidden rounded-[1.75rem] border-[#E8E6E0] bg-gradient-to-br from-[#2F4F4F] via-[#243B3B] to-[#1F3535] text-white shadow-apple-xl">
               <CardHeader className="pb-3">
                 <div className="flex items-start justify-between gap-4">
@@ -257,17 +263,22 @@ export function AdminOverviewPage() {
                         />
                         <Tooltip
                           cursor={{ fill: "rgba(47,79,79,0.08)" }}
-                          formatter={(value: number, _name, item) => [
-                            `${value}%`,
-                            (item.payload as AdminDashboardProjectProgress).status,
-                          ]}
+                          formatter={(value: number, _name, item) => {
+                            const rawStatus = (item.payload as AdminDashboardProjectProgress).status
+                            const label = STATUS_LABELS[rawStatus] ?? rawStatus
+                            return [`${value}%`, label]
+                          }}
                           contentStyle={{
                             backgroundColor: "#111827",
                             borderRadius: 12,
                             border: "1px solid rgba(248,247,244,0.12)",
-                            color: "#F9FAFB",
+                            padding: "10px 14px",
                             fontSize: 12,
                           }}
+                          // Nombre del item (status) en blanco legible en lugar
+                          // del teal de la barra, que no contrasta con el fondo.
+                          itemStyle={{ color: "#F9FAFB" }}
+                          labelStyle={{ color: "#F9FAFB", fontWeight: 600, marginBottom: 4 }}
                         />
                         <Bar dataKey="progressPercent" radius={[8, 8, 0, 0]}>
                           {safeData.projectsProgress.map((item, index) => (
@@ -281,57 +292,6 @@ export function AdminOverviewPage() {
               </CardContent>
             </Card>
 
-            {/* Columna derecha tipo “My Card” */}
-            <Card className="rounded-[1.75rem] border-[#E8E6E0] bg-white/95 shadow-apple-md">
-              <CardHeader>
-                <CardTitle className="font-heading text-base text-[#111827]">
-                  Estado global
-                </CardTitle>
-                <CardDescription className="text-xs text-[#6B7280]">
-                  Resumen rápido de proyectos, clientes y facturación.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4 text-sm text-[#374151]">
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <MiniKpiCard
-                    icon={FolderKanban}
-                    label="Proyectos activos"
-                    value={safeData.summary.projects.active}
-                    helper={`Total: ${safeData.summary.projects.total}`}
-                  />
-                  <MiniKpiCard
-                    icon={Users}
-                    label="Clientes activos"
-                    value={safeData.summary.clients.total}
-                    helper={`${safeData.summary.clients.newThisMonth} nuevos este mes`}
-                  />
-                </div>
-                <div className="rounded-[1.25rem] border border-[#E8E6E0] bg-[#F8F7F4] p-4 text-xs text-[#4B5563]">
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-[#2F4F4F]">Facturación</span>
-                    <CalendarDays className="h-4 w-4 text-[#9CA3AF]" />
-                  </div>
-                  {safeData.summary.billing.hasData ? (
-                    <div className="mt-2 space-y-1">
-                      <p>Total facturado: {formatCurrency(safeData.summary.billing.total ?? 0)}</p>
-                      <p>Pendiente: {formatCurrency(safeData.summary.billing.pending ?? 0)}</p>
-                    </div>
-                  ) : (
-                    <p className="mt-2 text-[#6B7280]">
-                      Aún no hay datos de facturación registrados en Terrazea para este filtro.
-                    </p>
-                  )}
-                </div>
-                <div className="flex items-center gap-2 rounded-[1.25rem] bg-[#FEF3C7] px-3 py-2 text-xs text-[#92400E]">
-                  <AlertTriangle className="h-4 w-4" />
-                  <span>
-                    {safeData.alerts.length > 0
-                      ? `${safeData.alerts.length} alerta(s) prioritaria(s) en proyectos activos.`
-                      : "Sin alertas activas. Todo en orden."}
-                  </span>
-                </div>
-              </CardContent>
-            </Card>
           </section>
 
           {/* Tarjetas inferiores tipo stats + mapa */}
@@ -348,9 +308,17 @@ export function AdminOverviewPage() {
               description={`${safeData.summary.projects.pending} pendientes`}
             />
             <StatCard
-              title="Clientes activos"
-              value={safeData.summary.clients.total}
-              description={`${safeData.summary.clients.newThisMonth} nuevos este mes`}
+              title="Ticket medio"
+              value={
+                safeData.summary.averageTicket !== null
+                  ? formatCurrency(safeData.summary.averageTicket)
+                  : "—"
+              }
+              description={
+                safeData.summary.ticketCount > 0
+                  ? `Con ${safeData.summary.ticketCount} proyecto${safeData.summary.ticketCount === 1 ? "" : "s"} con importe`
+                  : "Sin importes registrados"
+              }
             />
             <StatCard
               title="Avance medio"

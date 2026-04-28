@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
+import { Link } from "react-router-dom"
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -420,7 +421,11 @@ function ClientCard({ client }: { client: AdminClientOverview }) {
       : 0
 
   return (
-    <Card className="group relative overflow-hidden rounded-[1.75rem] border border-[#E8E6E0] bg-white/95 shadow-apple-md transition-all duration-300 hover:border-[#2F4F4F]/50 hover:shadow-apple-xl">
+    <Link
+      to={`/dashboard/clients/${client.id}`}
+      className="group relative block overflow-hidden rounded-[1.75rem] border border-[#E8E6E0] bg-white/95 shadow-apple-md transition-all duration-300 hover:border-[#2F4F4F]/50 hover:shadow-apple-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2F4F4F]/40"
+      aria-label={`Abrir ficha de ${client.fullName}`}
+    >
       <CardContent className="p-6">
         {/* Header con avatar y nombre */}
         <div className="mb-6 flex items-start gap-4">
@@ -529,7 +534,7 @@ function ClientCard({ client }: { client: AdminClientOverview }) {
           <span>Registrado {formatRelativeDate(client.createdAt)}</span>
         </div>
       </CardContent>
-    </Card>
+    </Link>
   )
 }
 

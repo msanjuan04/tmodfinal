@@ -610,10 +610,12 @@ export async function reactivateAdminProject(
 export async function fetchAdminClientDetail(
   clientId: string,
 ): Promise<import("@app/types/admin").AdminClientDetails> {
-  const response = await api.get<{ client: import("@app/types/admin").AdminClientDetails }>(
+  // El backend devuelve el objeto AdminClientDetails completo
+  // ({ client, stats, projects, activity, notes, ... }) sin wrapper extra.
+  const response = await api.get<import("@app/types/admin").AdminClientDetails>(
     `/admin/clients/${clientId}`,
   )
-  return response.data.client
+  return response.data
 }
 
 export interface TeamMemberProjectAssignment {
