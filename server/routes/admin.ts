@@ -73,6 +73,13 @@ import {
   updateProjectPhoto,
 } from "../../lib/supabase/admin-projects"
 import { requireAdminSession } from "../services/session"
+import {
+  PROTECTED_SECTIONS,
+  grantSectionAccess,
+  hasSectionAccess,
+  revokeSectionAccess,
+} from "../services/section-access"
+import { verifySectionPassword } from "../../lib/supabase/admin-section-passwords"
 import { asyncHandler } from "../utils/async-handler"
 import { isProjectTaskStatus } from "../../types/project-tasks"
 import {
@@ -816,6 +823,64 @@ router.use(
   asyncHandler(async (request, _response, next) => {
     requireAdminSession(request)
     next()
+  }),
+)
+
+// --- Secciones protegidas por contraseña (Presupuestos / Facturación) ---
+const sectionUnlockSchema = z.object({
+  section: z.enum(["budgets", "payments"]),
+  password: z.string().min(1).max(200),
+})
+
+const sectionLockSchema = z.object({
+  section: z.enum(["budgets", "payments"]),
+})
+
+router.get(
+  "/section-status",
+  asyncHandler(async (request, response) => {
+    const sections = Object.fromEntries(
+      PROTECTED_SECTIONS.map((section) => [section, hasSectionAccess(request, section)]),
+    ) as Record<(typeof PROTECTED_SECTIONS)[number], boolean>
+    response.json({ sections })
+  }),
+)
+
+router.post(
+  "/section-unlock",
+  asyncHandler(async (request, response) => {
+    const parsed = sectionUnlockSchema.safeParse(request.body)
+    if (!parsed.success) {
+      response.status(400).json({
+        message: "Datos inválidos",
+        errors: parsed.error.flatten().fieldErrors,
+      })
+      return
+    }
+    const { section, password } = parsed.data
+    const ok = await verifySectionPassword(section, password)
+    if (!ok) {
+      response.status(401).json({
+        message: "Contraseña incorrecta",
+        code: "SECTION_PASSWORD_INVALID",
+      })
+      return
+    }
+    grantSectionAccess(response, section)
+    response.json({ success: true, section })
+  }),
+)
+
+router.post(
+  "/section-lock",
+  asyncHandler(async (request, response) => {
+    const parsed = sectionLockSchema.safeParse(request.body)
+    if (!parsed.success) {
+      response.status(400).json({ message: "Datos inválidos" })
+      return
+    }
+    revokeSectionAccess(response, parsed.data.section)
+    response.json({ success: true, section: parsed.data.section })
   }),
 )
 
