@@ -114,3 +114,19 @@
 # Ve a tu app → Settings → App-Level Environment Variables
 ```
 
+
+## Requisitos de seguridad (septiembre 2026)
+
+Tras la auditoría, el servidor exige en producción:
+
+- `SESSION_SECRET` de **al menos 32 caracteres** (genera uno con `openssl rand -base64 48`). Si es más corto, el proceso no arranca a propósito.
+- `CLIENT_APP_URL` con `https://`.
+- Las variables de la plataforma tienen prioridad sobre cualquier `.env` (ya no se versiona ninguno).
+
+Y hay que hacer una vez, a mano:
+
+1. **Rotar** en sus paneles la `SUPABASE_SERVICE_ROLE_KEY`, la `RESEND_API_KEY` y las claves de Stripe: las anteriores estuvieron publicadas en el repositorio.
+2. **Cambiar la contraseña del administrador** en producción (la anterior estaba en el esquema SQL).
+3. Aplicar las migraciones `supabase/migrations/20260911_*.sql` en el SQL editor de Supabase y fijar la contraseña de las secciones Presupuestos y Facturación (instrucciones dentro de la migración).
+4. El bucket `project-assets` pasa a **privado** automáticamente en la primera subida; los enlaces se firman con caducidad de una hora.
+5. `supabase/schema.reset.dev.sql` borra toda la base de datos: solo para entornos de desarrollo.

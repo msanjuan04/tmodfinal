@@ -1,4 +1,5 @@
 import { createServerSupabaseClient } from "./server"
+import { createSignedStorageUrl } from "./storage"
 import type {
   AdminClientActivity,
   AdminClientDetails,
@@ -276,20 +277,22 @@ export async function getAdminClientDetail(clientId: string): Promise<AdminClien
     occurredAt: row.occurred_at,
   }))
 
-  const documents: AdminClientDocument[] = documentRows.map((row) => ({
+  const documents: AdminClientDocument[] = await Promise.all(
+    documentRows.map(async (row) => ({
     id: row.id,
     name: row.name,
     category: row.category,
     fileType: row.file_type,
     sizeLabel: row.size_label ?? null,
     storagePath: row.storage_path ?? null,
-    url: row.url ?? null,
+    url: (await createSignedStorageUrl(supabase, row.storage_path)) ?? row.url ?? null,
     uploadedAt: row.uploaded_at,
     uploadedById: row.uploaded_by ?? null,
     projectId: row.project_id ?? null,
     tags: Array.isArray(row.tags) ? row.tags : [],
     notes: row.notes ?? null,
-  }))
+    })),
+  )
 
   const projectIds = projects.map((project) => project.id)
   let messages: AdminClientMessage[] = []

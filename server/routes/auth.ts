@@ -1,8 +1,8 @@
 import { Router } from "express"
+import rateLimit from "express-rate-limit"
 import bcrypt from "bcryptjs"
 
 import {
-  loginWithEmail,
   loginWithEmailAndPassword,
   loginWithProjectCode,
 } from "../services/auth"
@@ -23,6 +23,24 @@ import { env } from "../config/env"
 
 const router = Router()
 
+// Límite de intentos por IP. Los códigos de proyecto y las contraseñas no
+// deben poder probarse sin coste.
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { success: false, message: "Demasiados intentos. Espera 15 minutos e inténtalo de nuevo." },
+})
+
+const passwordResetLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 5,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { success: false, message: "Has solicitado demasiados restablecimientos. Inténtalo dentro de una hora." },
+})
+
 router.get(
   "/session",
   asyncHandler(async (request, response) => {
@@ -38,6 +56,7 @@ router.get(
 
 router.post(
   "/login/email-password",
+  loginLimiter,
   asyncHandler(async (request, response) => {
     const { email, password } = request.body as { email?: string; password?: string }
 
@@ -53,25 +72,11 @@ router.post(
 
 router.post(
   "/login/project-code",
+  loginLimiter,
   asyncHandler(async (request, response) => {
     const { projectCode } = request.body as { projectCode?: string }
 
     const auth = await loginWithProjectCode(projectCode ?? "")
-
-    if (auth.session) {
-      setSessionCookie(response, auth.session)
-    }
-
-    response.json(auth.result)
-  }),
-)
-
-router.post(
-  "/login/email",
-  asyncHandler(async (request, response) => {
-    const { email, projectCode } = request.body as { email?: string; projectCode?: string }
-
-    const auth = await loginWithEmail(email ?? "", projectCode)
 
     if (auth.session) {
       setSessionCookie(response, auth.session)
@@ -146,6 +151,7 @@ router.post(
 
 router.post(
   "/forgot-password",
+  passwordResetLimiter,
   asyncHandler(async (request, response) => {
     const { email } = request.body as { email?: string }
     const normalizedEmail = email?.trim().toLowerCase() ?? ""

@@ -9,3 +9,11 @@ dist-server/
 *.zip
 build-*.zip
 .claude/
+
+# Secretos y artefactos que nunca deben versionarse
+.env*
+!env.example
+.npm-cache/
+*.tsbuildinfo
+tmodfinal/
+pnpm-lock.yaml

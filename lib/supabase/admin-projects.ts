@@ -1,4 +1,5 @@
 import { createServerSupabaseClient } from "./server"
+import { createSignedStorageUrl } from "./storage"
 import type {
   AdminProjectDetails,
   AdminProjectListFilters,
@@ -23,7 +24,6 @@ import {
 import { getProjectStatusMeta } from "../../server/services/email/project-status-meta"
 import { hasRecentNotification, recordNotification } from "../../server/services/scheduler/dedupe"
 
-const STORAGE_BUCKET = "project-assets"
 
 export const PROJECT_TEAM_ROLES: AdminProjectTeamRole[] = ["director", "arquitecto", "ingeniero", "instalador", "coordinador", "logistica", "otro"]
 
@@ -735,12 +735,7 @@ function computeWeightProgress(rows: Array<{ weight: number; status: string; pro
 
 export async function getAdminProjectDetail(projectRef: string): Promise<AdminProjectDetails> {
   const supabase = createServerSupabaseClient()
-  const storage = supabase.storage.from(STORAGE_BUCKET)
-  const resolveStorageUrl = (path: string | null | undefined) => {
-    if (!path) return null
-    const { data } = storage.getPublicUrl(path)
-    return data?.publicUrl ?? null
-  }
+  const resolveStorageUrl = (path: string | null | undefined) => createSignedStorageUrl(supabase, path)
 
   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(projectRef)
   const projectResult = await supabase
@@ -858,8 +853,8 @@ export async function getAdminProjectDetail(projectRef: string): Promise<AdminPr
       sortOrder: row.sort_order ?? 0,
     })) ?? []
 
-  const documents: AdminProjectDocument[] =
-    documentsRows.map((row: any) => ({
+  const documents: AdminProjectDocument[] = await Promise.all(
+    (documentsRows ?? []).map(async (row: any) => ({
       id: row.id,
       name: row.name,
       category: row.category,
@@ -868,17 +863,18 @@ export async function getAdminProjectDetail(projectRef: string): Promise<AdminPr
       uploadedAt: row.uploaded_at ?? null,
       status: row.status ?? "vigente",
       storagePath: row.storage_path ?? null,
-      url: resolveStorageUrl(row.storage_path ?? null),
+      url: await resolveStorageUrl(row.storage_path ?? null),
       uploadedById: row.uploaded_by ?? null,
       uploadedByName: Array.isArray(row.team_members) ? row.team_members[0]?.full_name ?? null : row.team_members?.full_name ?? null,
       notifyClient: Boolean(row.notify_client),
       tags: Array.isArray(row.tags) ? row.tags : [],
       notes: row.notes ?? null,
-    })) ?? []
+    })),
+  )
 
-  const photos: AdminProjectPhoto[] =
-    photosRows.map((row: any) => {
-      const publicUrl = row.url ?? resolveStorageUrl(row.storage_path ?? null) ?? ""
+  const photos: AdminProjectPhoto[] = await Promise.all(
+    (photosRows ?? []).map(async (row: any) => {
+      const publicUrl = (await resolveStorageUrl(row.storage_path ?? null)) ?? row.url ?? ""
       return {
         id: row.id,
         url: publicUrl,
@@ -889,7 +885,8 @@ export async function getAdminProjectDetail(projectRef: string): Promise<AdminPr
         tags: Array.isArray(row.tags) ? row.tags : [],
         isCover: Boolean(row.is_cover),
       }
-    }) ?? []
+    }),
+  )
 
   const timeline: AdminProjectTimelineEvent[] =
     timelineRows.map((row: any) => ({

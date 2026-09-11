@@ -22,6 +22,19 @@ import { listClientNotifications, markClientNotificationRead } from "../../lib/s
 
 const router = Router()
 
+// Un cliente que entró con código y aún no ha creado su contraseña no puede
+// consultar datos hasta completar ese paso (POST /api/auth/setup-password).
+router.use(
+  asyncHandler(async (request, response, next) => {
+    const session = requireSession(request)
+    if (session.mustUpdatePassword) {
+      response.status(403).json({ message: "Crea tu contraseña para continuar.", code: "PASSWORD_SETUP_REQUIRED" })
+      return
+    }
+    next()
+  }),
+)
+
 const sendClientMessageSchema = z.object({
   content: z
     .string()

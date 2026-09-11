@@ -36,15 +36,24 @@ function verifySignature(payload: string, signature: string) {
   }
 }
 
+function nowInSeconds() {
+  return Math.floor(Date.now() / 1000)
+}
+
 function encodeSession(session: SessionData) {
-  return Buffer.from(JSON.stringify(session)).toString("base64url")
+  const issuedAt = nowInSeconds()
+  const payload = { ...session, iat: issuedAt, exp: issuedAt + SESSION_TTL_SECONDS }
+  return Buffer.from(JSON.stringify(payload)).toString("base64url")
 }
 
 function decodeSession(encoded: string): SessionData | null {
   try {
     const json = Buffer.from(encoded, "base64url").toString("utf8")
-    const parsed = JSON.parse(json) as Partial<SessionData>
+    const parsed = JSON.parse(json) as Partial<SessionData> & { iat?: unknown; exp?: unknown }
 
+    // La caducidad va firmada dentro del payload: una cookie copiada deja de
+    // valer aunque el navegador ignore maxAge.
+    if (typeof parsed.exp !== "number" || parsed.exp <= nowInSeconds()) return null
     if (typeof parsed.userId !== "string") return null
     if (typeof parsed.email !== "string") return null
     if (typeof parsed.name !== "string") return null
@@ -87,7 +96,8 @@ export function requireSession(request: Request) {
 
 export function requireAdminSession(request: Request) {
   const session = requireSession(request)
-  if (session.role !== "admin" && !isSuperAdminEmail(session.email)) {
+  // El rol viene de app_users y se fija al iniciar sesión. Ningún email hardcodeado lo sustituye.
+  if (session.role !== "admin") {
     const error = new Error("Forbidden")
     ;(error as Error & { status?: number }).status = 403
     throw error

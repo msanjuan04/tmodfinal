@@ -78,8 +78,16 @@ import {
   grantSectionAccess,
   hasSectionAccess,
   revokeSectionAccess,
+  requireSectionAccess,
 } from "../services/section-access"
 import { verifySectionPassword } from "../../lib/supabase/admin-section-passwords"
+import {
+  STORAGE_BUCKET,
+  UPLOAD_RESPONSE_URL_TTL_SECONDS,
+  createSignedStorageUrl,
+  ensurePrivateStorageBucket,
+  validateUpload,
+} from "../../lib/supabase/storage"
 import { asyncHandler } from "../utils/async-handler"
 import { isProjectTaskStatus } from "../../types/project-tasks"
 import {
@@ -292,7 +300,6 @@ const updatePaymentSchema = z
     { message: "Debes proporcionar al menos un campo para actualizar." },
   )
 
-const STORAGE_BUCKET = "project-assets"
 
 function clientPortalBaseUrl() {
   return (env.clientAppUrl ?? "http://localhost:5173").replace(/\/$/, "")
@@ -576,29 +583,6 @@ async function sendDraftPayment(payment: AdminPaymentRecord): Promise<AdminPayme
   }
 }
 
-async function ensureStorageBucketExists(supabase: SupabaseClient) {
-  const { data: bucket, error } = await supabase.storage.getBucket(STORAGE_BUCKET)
-  if (bucket) {
-    if (!bucket.public) {
-      const { error: updateError } = await supabase.storage.updateBucket(STORAGE_BUCKET, { public: true })
-      if (updateError) throw updateError
-    }
-    return
-  }
-
-  if (error && !String(error.message ?? error).toLowerCase().includes("not found")) {
-    throw error
-  }
-
-  const { error: createError } = await supabase.storage.createBucket(STORAGE_BUCKET, {
-    public: true,
-  })
-
-  if (createError && !String(createError.message ?? createError).toLowerCase().includes("exists")) {
-    throw createError
-  }
-}
-
 function slugifyName(value: string) {
   return value
     .normalize("NFD")
@@ -611,15 +595,25 @@ function slugifyName(value: string) {
 
 async function uploadProjectAsset(projectId: string, type: "documents" | "photos", fileName: string, base64Content: string, contentType: string) {
   const supabase = createServerSupabaseClient()
-  await ensureStorageBucketExists(supabase)
+  await ensurePrivateStorageBucket(supabase)
   const base64 = base64Content.includes(",") ? base64Content.split(",").pop() ?? base64Content : base64Content
   const buffer = Buffer.from(base64, "base64")
+
+  const validation = validateUpload(fileName, contentType, buffer.byteLength)
+  if (!validation.ok) {
+    const error = new Error(validation.reason ?? "Fichero no permitido") as Error & { status?: number }
+    error.status = 400
+    throw error
+  }
+
   const safeName = slugifyName(fileName || `${Date.now()}`)
   const path = `${type}/${projectId}/${Date.now()}-${safeName}`
-  const { error } = await supabase.storage.from(STORAGE_BUCKET).upload(path, buffer, { contentType, upsert: true })
+  const { error } = await supabase.storage.from(STORAGE_BUCKET).upload(path, buffer, { contentType, upsert: false })
   if (error) throw error
-  const { data } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(path)
-  return { storagePath: path, publicUrl: data.publicUrl }
+  // URL firmada de corta vida para la respuesta inmediata; las lecturas posteriores
+  // vuelven a firmar a partir de storage_path.
+  const signedUrl = (await createSignedStorageUrl(supabase, path, { expiresIn: UPLOAD_RESPONSE_URL_TTL_SECONDS })) ?? ""
+  return { storagePath: path, signedUrl }
 }
 
 function isMissingRelationError(error: unknown, relation?: string) {
@@ -632,7 +626,7 @@ function isMissingRelationError(error: unknown, relation?: string) {
 }
 
 const SCHEMA_HINT =
-  "Faltan tablas o políticas en Supabase. Ejecuta las migraciones de supabase/schema.sql (supabase db push) y reinicia la API."
+  "Faltan tablas en Supabase. Aplica las migraciones pendientes de supabase/migrations y reinicia la API. Nunca ejecutes schema.reset.dev.sql fuera de un entorno de desarrollo."
 
 const milestoneSchema = z.object({
   title: z.string().min(1),
@@ -1331,6 +1325,11 @@ router.post(
   }),
 )
 
+// Presupuestos y Facturación exigen además el desbloqueo por contraseña de sección.
+// Hasta ahora el candado solo existía en la interfaz.
+router.use("/payments", requireSectionAccess("payments"))
+router.use("/budgets", requireSectionAccess("budgets"))
+
 router.get(
   "/payments",
   asyncHandler(async (request, response) => {
@@ -2020,7 +2019,7 @@ router.post(
             fileType: parsed.data.fileType,
             sizeLabel: parsed.data.sizeLabel ?? null,
             storagePath: upload.storagePath,
-            url: upload.publicUrl,
+            url: upload.signedUrl,
             projectId,
             tags,
             notes: parsed.data.notes ?? null,
@@ -2044,10 +2043,13 @@ router.post(
 
         const { data: projectRow } = await supabase
           .from("projects")
-          .select("id, name, client_id")
+          .select("id, name, slug, client_id")
           .eq("id", projectId)
           .maybeSingle()
         projectName = projectRow?.name ?? null
+        const documentsPortalUrl = projectRow?.slug
+          ? `${clientPortalBaseUrl()}/client/documents?project=${encodeURIComponent(projectRow.slug)}`
+          : `${clientPortalBaseUrl()}/client/documents`
 
         if (!sharedClientIds.size && projectRow?.client_id) {
           sharedClientIds.add(projectRow.client_id)
@@ -2069,7 +2071,7 @@ router.post(
                   documentName: parsed.data.name,
                   documentCategory: parsed.data.category,
                   projectName,
-                  documentUrl: upload.publicUrl,
+                  documentUrl: documentsPortalUrl,
                 })
 
                 try {
@@ -2080,7 +2082,7 @@ router.post(
                     type: "document_shared",
                     title: parsed.data.name,
                     description: parsed.data.category ?? "Documento disponible",
-                    linkUrl: upload.publicUrl,
+                    linkUrl: documentsPortalUrl,
                     relatedId: id,
                     metadata: {
                       projectId,
@@ -2099,7 +2101,7 @@ router.post(
       }
     }
 
-    response.status(201).json({ id, url: upload.publicUrl })
+    response.status(201).json({ id, url: upload.signedUrl })
   }),
 )
 
@@ -2142,7 +2144,7 @@ router.post(
     const filename = parsed.data.caption ? `${parsed.data.caption}.jpg` : `foto-${Date.now()}.jpg`
     const upload = await uploadProjectAsset(projectId, "photos", filename, parsed.data.fileContent, parsed.data.fileType)
     const id = await createProjectPhoto(projectId, {
-      url: upload.publicUrl,
+      url: upload.signedUrl,
       caption: parsed.data.caption ?? null,
       takenAt: parsed.data.takenAt ?? null,
       storagePath: upload.storagePath,
@@ -2165,7 +2167,7 @@ router.post(
       status: "info",
     })
 
-    response.status(201).json({ id, url: upload.publicUrl })
+    response.status(201).json({ id, url: upload.signedUrl })
   }),
 )
 

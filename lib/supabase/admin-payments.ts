@@ -1,7 +1,7 @@
 import { createServerSupabaseClient } from "./server"
 import type { AdminPaymentRecord, AdminPaymentsSummary, PaymentStatus } from "@app/types/admin"
 
-const STORAGE_BUCKET = "project-assets"
+import { createSignedStorageUrl } from "./storage"
 
 const PAYMENT_SELECT = `
   id,
@@ -76,7 +76,7 @@ function getSingleRelation<T>(relation: Relation<T>): T | null {
   return Array.isArray(relation) ? relation[0] ?? null : relation
 }
 
-function mapPayment(row: PaymentRow, resolveDocumentUrl: (path: string | null) => string | null): AdminPaymentRecord {
+async function mapPayment(row: PaymentRow, resolveDocumentUrl: (path: string | null) => Promise<string | null>): Promise<AdminPaymentRecord> {
   const proposalDocument = getSingleRelation(row.proposal_document)
   const documentPath = proposalDocument?.storage_path ?? null
   const project = getSingleRelation(row.projects)
@@ -109,7 +109,7 @@ function mapPayment(row: PaymentRow, resolveDocumentUrl: (path: string | null) =
     clientStripeCustomerId: client?.stripe_customer_id ?? null,
     proposalDocumentId: row.proposal_document_id ?? proposalDocument?.id ?? null,
     proposalDocumentName: proposalDocument?.name ?? null,
-    proposalDocumentUrl: resolveDocumentUrl(documentPath),
+    proposalDocumentUrl: await resolveDocumentUrl(documentPath),
     budgetId: row.budget_id ?? null,
   }
 }
@@ -171,13 +171,7 @@ export async function getAdminPaymentById(paymentId: string): Promise<AdminPayme
 
   if (error) throw error
   if (!data) return null
-  const storage = supabase.storage.from(STORAGE_BUCKET)
-  const resolveDocumentUrl = (path: string | null) => {
-    if (!path) return null
-    const { data: urlData } = storage.getPublicUrl(path)
-    return urlData?.publicUrl ?? null
-  }
-  return mapPayment(data as PaymentRow, resolveDocumentUrl)
+  return mapPayment(data as PaymentRow, (path) => createSignedStorageUrl(supabase, path))
 }
 
 export async function listAdminPayments(): Promise<{ payments: AdminPaymentRecord[]; summary: AdminPaymentsSummary }> {
@@ -189,14 +183,9 @@ export async function listAdminPayments(): Promise<{ payments: AdminPaymentRecor
 
   if (error) throw error
 
-  const storage = supabase.storage.from(STORAGE_BUCKET)
-  const resolveDocumentUrl = (path: string | null) => {
-    if (!path) return null
-    const { data: urlData } = storage.getPublicUrl(path)
-    return urlData?.publicUrl ?? null
-  }
-
-  const payments = (data as PaymentRow[] | null)?.map((row) => mapPayment(row, resolveDocumentUrl)) ?? []
+  const payments = await Promise.all(
+    ((data as PaymentRow[] | null) ?? []).map((row) => mapPayment(row, (path) => createSignedStorageUrl(supabase, path))),
+  )
   return {
     payments,
     summary: calculateSummary(payments),

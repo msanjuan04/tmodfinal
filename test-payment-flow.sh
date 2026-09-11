@@ -3,7 +3,7 @@
 
 API_URL="http://localhost:4000"
 ADMIN_EMAIL="aterrazea@gmail.com"
-ADMIN_PASSWORD="admin123"
+ADMIN_PASSWORD="${ADMIN_PASSWORD:?Define ADMIN_PASSWORD en el entorno antes de ejecutar este script}"
 
 echo "🔐 1. Iniciando sesión como admin..."
 LOGIN_RESPONSE=$(curl -s -c /tmp/cookies.txt -X POST "$API_URL/api/auth/login/email-password" \

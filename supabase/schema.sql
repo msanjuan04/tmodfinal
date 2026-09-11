@@ -1,81 +1,9 @@
 -- Terrazea Client Zone schema
--- Provision this file in Supabase SQL editor or via `supabase db push`
+-- Snapshot del esquema para una base de datos NUEVA. En una base existente,
+-- aplica solo los ficheros de supabase/migrations en orden.
 
--- ============================================================================
--- BLOCK 1: CLEANUP - Ejecutar primero para limpiar datos existentes
--- ============================================================================
-
--- Deshabilitar RLS temporalmente para limpieza
-alter table if exists public.project_messages disable row level security;
-alter table if exists public.project_payments disable row level security;
-alter table if exists public.project_conversations disable row level security;
-alter table if exists public.project_photos_summary disable row level security;
-alter table if exists public.project_events disable row level security;
-alter table if exists public.project_documents_summary disable row level security;
-alter table if exists public.project_metrics disable row level security;
-alter table if exists public.project_documents disable row level security;
-alter table if exists public.project_photos disable row level security;
-alter table if exists public.project_activity disable row level security;
-alter table if exists public.project_phases disable row level security;
-alter table if exists public.project_milestones disable row level security;
-alter table if exists public.project_team_members disable row level security;
-alter table if exists public.team_members disable row level security;
-alter table if exists public.project_updates disable row level security;
-alter table if exists public.projects disable row level security;
-alter table if exists public.clients disable row level security;
-alter table if exists public.app_users disable row level security;
-alter table if exists public.project_notifications disable row level security;
-
--- Eliminar datos existentes (en orden correcto por foreign keys)
-delete from public.project_messages;
-delete from public.project_payments;
-delete from public.project_conversations;
-delete from public.project_photos_summary;
-delete from public.project_events;
-delete from public.project_documents_summary;
-delete from public.project_metrics;
-delete from public.project_documents;
-delete from public.project_photos;
-delete from public.project_activity;
-delete from public.project_phases;
-delete from public.project_milestones;
-delete from public.project_team_members;
-delete from public.team_members;
-delete from public.project_updates;
-delete from public.projects;
-delete from public.clients;
-delete from public.app_users;
-
--- Eliminar tablas existentes
-drop table if exists public.project_messages cascade;
-drop table if exists public.project_payments cascade;
-drop table if exists public.project_conversations cascade;
-drop table if exists public.project_photos_summary cascade;
-drop table if exists public.project_events cascade;
-drop table if exists public.project_documents_summary cascade;
-drop table if exists public.project_metrics cascade;
-drop table if exists public.project_documents cascade;
-drop table if exists public.project_photos cascade;
-drop table if exists public.project_activity cascade;
-drop table if exists public.project_phases cascade;
-drop table if exists public.project_milestones cascade;
-drop table if exists public.project_team_members cascade;
-drop table if exists public.team_members cascade;
-drop table if exists public.project_updates cascade;
-drop table if exists public.projects cascade;
-drop table if exists public.clients cascade;
-drop table if exists public.app_users cascade;
-drop table if exists public.project_notifications cascade;
-
--- Eliminar tipos existentes
-drop type if exists public.message_sender cascade;
-drop type if exists public.document_status cascade;
-drop type if exists public.activity_status cascade;
-drop type if exists public.phase_status cascade;
-drop type if exists public.milestone_status cascade;
-drop type if exists public.update_type cascade;
-drop type if exists public.payment_status cascade;
-drop type if exists public.notification_audience cascade;
+-- El bloque de limpieza (delete + drop table) vive ahora en schema.reset.dev.sql
+-- y es SOLO para entornos de desarrollo. Este fichero únicamente crea.
 
 -- ============================================================================
 -- BLOCK 2: SCHEMA COMPLETO - Ejecutar después del bloque de limpieza
@@ -687,12 +615,14 @@ create policy admin_email_full_access_project_notifications
 
 -- Seed data -----------------------------------------------------------------
 
--- Usuario administrador con contraseña hasheada
+-- Usuario administrador SIN contraseña: el primer acceso se hace con
+-- "¿Olvidaste tu contraseña?" para fijar una propia. Nunca sembrar
+-- contraseñas conocidas en el esquema.
 insert into public.app_users (id, email, password_hash, full_name, role)
 values (
   'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
   'aterrazea@gmail.com',
-  crypt('admin123', gen_salt('bf')),
+  null,
   'Administrador Terrazea',
   'admin'
 )
@@ -701,9 +631,9 @@ on conflict (id) do nothing;
 -- Usuarios cliente de ejemplo
 insert into public.app_users (email, password_hash, full_name, role)
 values 
-  ('juan@example.com', crypt('password123', gen_salt('bf')), 'Juan Pérez', 'client'),
-  ('maria.garcia@example.com', crypt('password123', gen_salt('bf')), 'María García', 'client'),
-  ('carlos.lopez@example.com', crypt('password123', gen_salt('bf')), 'Carlos López', 'client')
+  ('juan@example.com', null, 'Juan Pérez', 'client'),
+  ('maria.garcia@example.com', null, 'María García', 'client'),
+  ('carlos.lopez@example.com', null, 'Carlos López', 'client')
 on conflict (email) do nothing;
 
 insert into public.clients (id, full_name, email, phone, client_type, company, status, city, country, tags, last_active_at, password_initialized)

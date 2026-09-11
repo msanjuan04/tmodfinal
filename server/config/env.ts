@@ -9,7 +9,8 @@ const envFiles = [".env", ".env.local"]
 for (const file of envFiles) {
   const fullPath = path.resolve(process.cwd(), file)
   if (fs.existsSync(fullPath)) {
-    loadEnv({ path: fullPath, override: true })
+    // override:false → las variables de la plataforma (DigitalOcean) mandan sobre el fichero local.
+    loadEnv({ path: fullPath, override: false })
   }
 }
 
@@ -73,6 +74,23 @@ if (!parsed.success) {
   console.error("❌ Invalid environment configuration:")
   console.error(parsed.error.flatten().fieldErrors)
   throw new Error("Environment validation failed")
+}
+
+// Requisitos adicionales en producción: fallar al arrancar es preferible a
+// desplegar con un secreto débil o con enlaces en HTTP.
+if (parsed.data.NODE_ENV === "production") {
+  const problems: string[] = []
+  if (parsed.data.SESSION_SECRET.length < 32) {
+    problems.push("SESSION_SECRET debe tener al menos 32 caracteres en producción (genera uno con `openssl rand -base64 48`).")
+  }
+  if (!parsed.data.CLIENT_APP_URL.startsWith("https://")) {
+    problems.push("CLIENT_APP_URL debe usar https:// en producción.")
+  }
+  if (problems.length > 0) {
+    console.error("❌ Configuración de producción insegura:")
+    for (const problem of problems) console.error(` - ${problem}`)
+    throw new Error("Environment validation failed")
+  }
 }
 
 const normalizedSupabaseUrl = parsed.data.SUPABASE_URL || parsed.data.NEXT_PUBLIC_SUPABASE_URL

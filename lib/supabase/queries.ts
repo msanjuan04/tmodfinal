@@ -5,6 +5,29 @@ import { env } from "../../server/config/env"
 import { sendConversationNotificationEmail } from "../../server/services/email"
 import { createProjectNotification } from "./notifications"
 import { createServerSupabaseClient, resolveDefaultProjectSlug } from "./server"
+import { createSignedStorageUrl } from "./storage"
+
+type PhotoRowLike = {
+  id: string
+  url: string | null
+  caption: string | null
+  taken_at: string | null
+  sort_order: number | null
+  storage_path?: string | null
+}
+
+/** Firma la URL de cada foto a partir de storage_path; si no la hay, usa la URL guardada. */
+async function resolvePhotoUrls(supabase: SupabaseClient, photos: PhotoRowLike[] | null | undefined) {
+  return Promise.all(
+    (photos ?? []).map(async (photo) => ({
+      id: photo.id,
+      url: (await createSignedStorageUrl(supabase, photo.storage_path)) ?? photo.url,
+      caption: photo.caption,
+      takenAt: photo.taken_at,
+      sortOrder: photo.sort_order ?? 0,
+    })),
+  )
+}
 
 type UpdateType = "success" | "info" | "warning" | "message"
 type StatusState = "completed" | "in_progress" | "pending"
@@ -389,7 +412,7 @@ export async function getProjectDetails(projectSlug?: string): Promise<ProjectDe
       .limit(10),
     supabase
       .from("project_photos")
-      .select("id, url, caption, taken_at, sort_order")
+      .select("id, url, caption, taken_at, sort_order, storage_path")
       .eq("project_id", data.id)
       .order("sort_order", { ascending: true }),
     supabase
@@ -438,14 +461,7 @@ export async function getProjectDetails(projectSlug?: string): Promise<ProjectDe
         description: item.description,
         status: item.status as ActivityStatus,
       })) ?? [],
-    photos:
-      photos?.map((photo) => ({
-        id: photo.id,
-        url: photo.url,
-        caption: photo.caption,
-        takenAt: photo.taken_at,
-        sortOrder: photo.sort_order ?? 0,
-      })) ?? [],
+    photos: await resolvePhotoUrls(supabase, photos),
     milestones:
       milestones?.map((milestone) => ({
         id: milestone.id,
@@ -473,7 +489,6 @@ export async function getProjectDetails(projectSlug?: string): Promise<ProjectDe
   }
 }
 
-const STORAGE_BUCKET = "project-assets"
 
 export async function getDocuments(projectSlug?: string): Promise<DocumentsData> {
   const supabase = createServerSupabaseClient()
@@ -523,42 +538,32 @@ export async function getDocuments(projectSlug?: string): Promise<DocumentsData>
       return uploaded >= sevenDaysAgo
     }).length ?? 0
 
-  const storage = supabase.storage.from(STORAGE_BUCKET)
+  // URLs firmadas de corta vida: el bucket es privado.
+  const documentsWithUrls = await Promise.all(
+    (documents ?? []).map(async (doc) => {
+      const [viewUrl, downloadUrl] = doc.storage_path
+        ? await Promise.all([
+            createSignedStorageUrl(supabase, doc.storage_path),
+            createSignedStorageUrl(supabase, doc.storage_path, { download: doc.name }),
+          ])
+        : [null, null]
+
+      return {
+        id: doc.id,
+        name: doc.name,
+        category: doc.category,
+        fileType: doc.file_type,
+        sizeLabel: doc.size_label,
+        uploadedAt: doc.uploaded_at,
+        status: doc.status as DocumentStatus,
+        viewUrl,
+        downloadUrl,
+      }
+    }),
+  )
 
   return {
-    documents:
-      documents?.map((doc) => {
-        let viewUrl: string | null = null
-        let downloadUrl: string | null = null
-
-        if (doc.storage_path) {
-          const { data } = storage.getPublicUrl(doc.storage_path)
-          viewUrl = data?.publicUrl ?? null
-
-          if (viewUrl) {
-            try {
-              const download = new URL(viewUrl)
-              download.searchParams.set("download", doc.name)
-              downloadUrl = download.toString()
-            } catch {
-              const separator = viewUrl.includes("?") ? "&" : "?"
-              downloadUrl = `${viewUrl}${separator}download=${encodeURIComponent(doc.name)}`
-            }
-          }
-        }
-
-        return {
-          id: doc.id,
-          name: doc.name,
-          category: doc.category,
-          fileType: doc.file_type,
-          sizeLabel: doc.size_label,
-          uploadedAt: doc.uploaded_at,
-          status: doc.status as DocumentStatus,
-          viewUrl,
-          downloadUrl,
-        }
-      }) ?? [],
+    documents: documentsWithUrls,
     stats: {
       total,
       newThisWeek,
@@ -577,7 +582,7 @@ export async function getProjectGallery(projectSlug?: string): Promise<GalleryDa
   const [{ data: photos, error: photosError }, { data: summary, error: summaryError }] = await Promise.all([
     supabase
       .from("project_photos")
-      .select("id, url, caption, taken_at, sort_order")
+      .select("id, url, caption, taken_at, sort_order, storage_path")
       .eq("project_id", projectId)
       .order("sort_order", { ascending: true }),
     supabase.from("project_photos_summary").select("total_photos, last_update").eq("project_id", projectId).maybeSingle(),
@@ -587,14 +592,7 @@ export async function getProjectGallery(projectSlug?: string): Promise<GalleryDa
   if (summaryError) throw summaryError
 
   return {
-    photos:
-      photos?.map((photo) => ({
-        id: photo.id,
-        url: photo.url,
-        caption: photo.caption,
-        takenAt: photo.taken_at,
-        sortOrder: photo.sort_order ?? 0,
-      })) ?? [],
+    photos: await resolvePhotoUrls(supabase, photos),
     summary: {
       totalPhotos: summary?.total_photos ?? null,
       lastUpdate: summary?.last_update ?? null,

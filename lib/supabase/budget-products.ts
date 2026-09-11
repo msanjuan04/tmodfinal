@@ -3,6 +3,7 @@ import { Buffer } from "node:buffer"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 import { createServerSupabaseClient } from "./server"
+import { STORAGE_BUCKET, createSignedStorageUrl, ensurePrivateStorageBucket } from "./storage"
 
 export interface BudgetProductRow {
   id: string
@@ -27,45 +28,18 @@ export interface AdminBudgetProduct {
   updatedAt: string
 }
 
-const STORAGE_BUCKET = "project-assets"
-
-async function ensureStorageBucketExists(supabase: SupabaseClient) {
-  const { data: bucket, error } = await supabase.storage.getBucket(STORAGE_BUCKET)
-  if (bucket) {
-    if (!bucket.public) {
-      const { error: updateError } = await supabase.storage.updateBucket(STORAGE_BUCKET, { public: true })
-      if (updateError) throw updateError
-    }
-    return
-  }
-
-  if (error && !String(error.message ?? error).toLowerCase().includes("not found")) {
-    throw error
-  }
-
-  const { error: createError } = await supabase.storage.createBucket(STORAGE_BUCKET, {
-    public: true,
-  })
-
-  if (createError && !String(createError.message ?? createError).toLowerCase().includes("exists")) {
-    throw createError
-  }
+function buildImageUrl(supabase: SupabaseClient, imagePath: string | null): Promise<string | null> {
+  return createSignedStorageUrl(supabase, imagePath)
 }
 
-function buildImageUrl(supabase: SupabaseClient, imagePath: string | null): string | null {
-  if (!imagePath) return null
-  const { data } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(imagePath)
-  return data?.publicUrl ?? null
-}
-
-function mapRow(row: BudgetProductRow, supabase: SupabaseClient): AdminBudgetProduct {
+async function mapRow(row: BudgetProductRow, supabase: SupabaseClient): Promise<AdminBudgetProduct> {
   return {
     id: row.id,
     name: row.name,
     description: row.description,
     unitPrice: Number(row.unit_price ?? 0),
     imagePath: row.image_path,
-    imageUrl: buildImageUrl(supabase, row.image_path),
+    imageUrl: await buildImageUrl(supabase, row.image_path),
     tags: Array.isArray(row.tags) ? (row.tags as string[]) : [],
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -80,7 +54,7 @@ export async function listBudgetProducts(): Promise<AdminBudgetProduct[]> {
     .order("created_at", { ascending: false })
 
   if (error) throw error
-  return (data ?? []).map((row) => mapRow(row as BudgetProductRow, supabase))
+  return Promise.all((data ?? []).map((row) => mapRow(row as BudgetProductRow, supabase)))
 }
 
 export interface CreateBudgetProductInput {
@@ -93,7 +67,7 @@ export interface CreateBudgetProductInput {
 
 export async function createBudgetProduct(input: CreateBudgetProductInput): Promise<AdminBudgetProduct> {
   const supabase = createServerSupabaseClient()
-  await ensureStorageBucketExists(supabase)
+  await ensurePrivateStorageBucket(supabase)
   const payload = {
     name: input.name.trim(),
     description: input.description?.trim() || null,
@@ -147,7 +121,7 @@ export interface UpdateBudgetProductInput {
 
 export async function updateBudgetProduct(id: string, input: UpdateBudgetProductInput): Promise<AdminBudgetProduct> {
   const supabase = createServerSupabaseClient()
-  await ensureStorageBucketExists(supabase)
+  await ensurePrivateStorageBucket(supabase)
   const patch: Record<string, unknown> = {}
   if (input.name !== undefined) patch.name = input.name.trim()
   if (input.description !== undefined) patch.description = input.description?.trim() || null

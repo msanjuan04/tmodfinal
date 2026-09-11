@@ -1,6 +1,7 @@
 import cookieParser from "cookie-parser"
 import cors from "cors"
 import express from "express"
+import helmet from "helmet"
 import morgan from "morgan"
 import path from "node:path"
 
@@ -12,11 +13,31 @@ import { webhooksRouter } from "./routes/webhooks"
 import { startScheduler } from "./services/scheduler"
 
 const app = express()
-const MAX_PAYLOAD_SIZE = "150mb"
+// Los ficheros viajan en base64 dentro del JSON: 25 MB de fichero ≈ 34 MB de payload.
+const MAX_PAYLOAD_SIZE = "40mb"
 
-// CORS solo para las rutas de API; permitimos cualquier origen (reflejado) para evitar 500 por despliegues con dominio distinto
+// Detrás del proxy de DigitalOcean: necesario para que el rate limiting vea la IP real.
+app.set("trust proxy", 1)
+
+// Cabeceras de seguridad. CSP se deja fuera de momento: la SPA carga Clarity,
+// Google Fonts, Stripe y Supabase y necesita una política específica.
+app.use(helmet({ contentSecurityPolicy: false }))
+
+// CORS restringido al origen del portal. En producción el frontend se sirve
+// desde este mismo proceso, así que en la práctica solo aplica en desarrollo.
+const allowedOrigins = new Set<string>([env.clientAppOrigin])
+if (env.nodeEnv !== "production") {
+  allowedOrigins.add("http://localhost:5173")
+  allowedOrigins.add("http://127.0.0.1:5173")
+}
 const corsMiddleware = cors({
-  origin: true,
+  origin(origin, callback) {
+    if (!origin || allowedOrigins.has(origin)) {
+      callback(null, true)
+      return
+    }
+    callback(null, false)
+  },
   credentials: true,
 })
 app.use(cookieParser())
@@ -56,8 +77,10 @@ app.use((error: Error & { status?: number }, _request: express.Request, response
   if (status >= 500) {
     console.error(error)
   }
+  // En producción no filtramos detalles internos (tablas, columnas, constraints) al cliente.
+  const exposeMessage = status < 500 || env.nodeEnv !== "production"
   response.status(status).json({
-    message: error.message ?? "Internal Server Error",
+    message: exposeMessage ? error.message ?? "Internal Server Error" : "Error interno del servidor",
   })
 })
 
